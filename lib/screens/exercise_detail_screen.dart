@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_theme.dart';
 import '../helpers/date_utils_helper.dart';
 import '../models/exercise.dart';
 
@@ -21,78 +22,168 @@ class ExerciseDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool completed = isCompletedOnDate ?? exercise.isCompleted;
+    final Color catColor = AppTheme.categoryColor(exercise.category);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Chi Tiết Bài Tập')),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Card(
-              color: Colors.teal.shade50,
-              child: ListTile(
-                leading: const Icon(
-                  Icons.fitness_center,
-                  size: 40,
-                  color: Colors.teal,
+              color: Colors.white,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceTint,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        AppTheme.categoryIcon(exercise.category),
+                        size: 30,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            exercise.title,
+                            style: const TextStyle(
+                              fontSize: 19,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: catColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Nhóm bài tập: ${exercise.category}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: catColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                title: Text(
-                  exercise.title,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                subtitle: Text('Nhóm bài tập: ${exercise.category}'),
               ),
             ),
-            const SizedBox(height: 20),
-            Text(
-              '📅 Lịch tập: ${exercise.scheduleLabel}',
-              style: const TextStyle(fontSize: 16),
-            ),
-            if (selectedDate != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                '📌 Trạng thái ngày ${DateUtilsHelper.formatDisplayDate(selectedDate!)}: ${completed ? "Đã hoàn thành" : "Chưa hoàn thành"}',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: completed ? Colors.teal : Colors.orange.shade800,
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '📅 Lịch tập: ${exercise.scheduleLabel}',
+                      style: const TextStyle(
+                        fontSize: 15.5,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    if (selectedDate != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        '📌 Trạng thái ngày ${DateUtilsHelper.formatDisplayDate(selectedDate!)}: ${completed ? "Đã hoàn thành" : "Chưa hoàn thành"}',
+                        style: TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w600,
+                          color: completed
+                              ? AppTheme.primaryColor
+                              : AppTheme.warningColor,
+                        ),
+                      ),
+                    ],
+                    if (exercise.legacyCompletedWithoutDate) ...[
+                      const SizedBox(height: 10),
+                      const Text(
+                        '✓ Đã hoàn thành trước đây',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.primaryColor,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                    const Divider(height: 24),
+                    Text(
+                      '🔁 Khối lượng: ${exercise.volumeLabel}',
+                      style: const TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '🔥 Năng lượng tiêu hao (ước tính): ~${exercise.calories} kcal',
+                      style: const TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.accentCaloriesColor,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-            if (exercise.legacyCompletedWithoutDate) ...[
-              const SizedBox(height: 8),
-              const Text(
-                '✓ Đã hoàn thành trước đây (dữ liệu phiên bản trước)',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.teal,
-                  fontStyle: FontStyle.italic,
+            ),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Hướng dẫn kỹ thuật:',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      exercise.notes.isEmpty
+                          ? 'Chưa có ghi chú kỹ thuật cho bài tập này.'
+                          : exercise.notes,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        height: 1.45,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-            const SizedBox(height: 8),
-            Text(
-              '🔁 Khối lượng: ${exercise.volumeLabel}',
-              style: const TextStyle(fontSize: 16),
             ),
-            const SizedBox(height: 8),
-            Text(
-              '🔥 Năng lượng tiêu hao (ước tính): ~${exercise.calories} kcal',
-              style: const TextStyle(fontSize: 16),
-            ),
-            const Divider(height: 32),
-            const Text(
-              'Hướng dẫn kỹ thuật:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(exercise.notes, style: const TextStyle(fontSize: 15)),
-            const Spacer(),
+            const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
+              height: 48,
               child: ElevatedButton.icon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.arrow_back),

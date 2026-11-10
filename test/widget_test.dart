@@ -3,33 +3,60 @@ import 'dart:convert';
 import 'package:fitplan_hutech/app.dart';
 import 'package:fitplan_hutech/models/exercise.dart';
 import 'package:fitplan_hutech/providers/workout_provider.dart';
+import 'package:fitplan_hutech/screens/dashboard_screen.dart';
 import 'package:fitplan_hutech/screens/login_screen.dart';
+import 'package:fitplan_hutech/screens/welcome_choice_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('App smoke test - hiển thị màn hình đăng nhập', (
-    WidgetTester tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({});
+  testWidgets(
+    'App smoke test - hiển thị màn hình đăng nhập FitPlan và nút hiện/ẩn mật khẩu',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) =>
-            WorkoutProvider(clock: () => DateTime(2026, 11, 10, 9, 0))
-              ..loadData(),
-        child: const FitPlanApp(),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) =>
+              WorkoutProvider(clock: () => DateTime(2026, 11, 10, 9, 0))
+                ..loadData(),
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byType(FitPlanApp), findsOneWidget);
-    expect(find.byType(LoginScreen), findsOneWidget);
-    expect(find.text('FITPLAN PRO'), findsOneWidget);
-    expect(find.text('ĐĂNG NHẬP'), findsOneWidget);
-  });
+      expect(find.byType(FitPlanApp), findsOneWidget);
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.text('FitPlan'), findsOneWidget);
+      expect(find.text('FITPLAN PRO'), findsNothing);
+      expect(find.text('ĐĂNG NHẬP'), findsOneWidget);
+
+      // Kiểm tra nút hiện/ẩn mật khẩu
+      final passwordFieldFinder = find.byKey(const Key('login_password_field'));
+      TextField passwordTextField = tester.widget<TextField>(
+        find.descendant(
+          of: passwordFieldFinder,
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(passwordTextField.obscureText, isTrue);
+
+      await tester.tap(
+        find.byKey(const Key('toggle_password_visibility_button')),
+      );
+      await tester.pumpAndSettle();
+
+      passwordTextField = tester.widget<TextField>(
+        find.descendant(
+          of: passwordFieldFinder,
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(passwordTextField.obscureText, isFalse);
+    },
+  );
 
   test('Đọc JSON bài tập cấu trúc cũ (không có imagePath và createdAt) giữ nguyên dữ liệu, thứ tự và quy tắc migration', () async {
     final singleOldExercise = Exercise.fromJson({
@@ -422,6 +449,8 @@ void main() {
         '172,5',
       );
 
+      await tester.ensureVisible(find.byKey(const Key('update_bmi_button')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('update_bmi_button')));
       await tester.pumpAndSettle();
 
@@ -432,4 +461,422 @@ void main() {
       expect(find.text('Đã cập nhật chỉ số BMI!'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'Xác nhận ngừng lịch: Hủy giữ nguyên dữ liệu; Xác nhận ngừng lịch từ hôm nay, giữ kết quả đã hoàn thành và hỗ trợ Hoàn tác',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'isLoggedIn': true});
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0), // Thứ 3
+      );
+      await provider.loadData();
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Bài '4' (Plank) có lịch mỗi ngày
+      expect(find.text('Plank siết cơ bụng'), findsOneWidget);
+
+      // 1. Bấm nút ngừng lịch -> hiện hộp xác nhận đúng câu thông báo
+      await tester.ensureVisible(find.byKey(const Key('delete_exercise_4')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('delete_exercise_4')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Ngừng lịch tập này từ hôm nay? Kết quả đã hoàn thành vẫn được giữ lại.',
+        ),
+        findsOneWidget,
+      );
+
+      // 2. Bấm Hủy -> không thay đổi dữ liệu
+      await tester.tap(find.byKey(const Key('cancel_stop_schedule_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        provider.exercises.firstWhere((e) => e.id == '4').isStopped,
+        isFalse,
+      );
+      expect(find.text('Plank siết cơ bụng'), findsOneWidget);
+
+      // 3. Đánh dấu hoàn thành bài '4' hôm nay rồi xác nhận ngừng lịch
+      await tester.ensureVisible(find.byKey(const Key('checkbox_exercise_4')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('checkbox_exercise_4')));
+      await tester.pumpAndSettle();
+      expect(
+        provider.isExerciseCompletedOn('4', dateKey: '2026-11-10'),
+        isTrue,
+      );
+
+      // Cuộn xuống để nút ngừng lịch nằm trên vùng nút nổi Thêm bài tập
+      await tester.drag(find.byType(ListView).first, const Offset(0, -120));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('delete_exercise_4')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('confirm_stop_schedule_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        provider.allExercisesIncludingStopped
+            .firstWhere((e) => e.id == '4')
+            .isStopped,
+        isTrue,
+      );
+      expect(provider.exercises.any((e) => e.id == '4'), isFalse);
+      // Kết quả đã hoàn thành hôm nay vẫn hiển thị kèm thông báo ngắn gọn
+      expect(find.text('Plank siết cơ bụng'), findsOneWidget);
+      expect(find.text('Kết quả đã lưu từ lịch trước đây'), findsOneWidget);
+
+      // 4. Bấm Hoàn tác (Undo) -> khôi phục lịch bài tập
+      await tester.tap(find.text('Hoàn tác (Undo)'));
+      await tester.pumpAndSettle();
+      expect(
+        provider.allExercisesIncludingStopped
+            .firstWhere((e) => e.id == '4')
+            .isStopped,
+        isFalse,
+      );
+      expect(provider.exercises.any((e) => e.id == '4'), isTrue);
+    },
+  );
+
+  testWidgets(
+    'Tab Cá nhân & Đăng xuất: hiển thị Về ứng dụng, hủy đăng xuất, xử lý lỗi lưu đăng xuất, xác nhận đăng xuất, chặn Back và bảo toàn dữ liệu khi đăng nhập lại',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({
+        'isLoggedIn': true,
+        'userEmail': 'sv.hutech@edu.vn',
+        'weight': 67.5,
+        'height': 172.5,
+      });
+
+      final storage = _FailingLogoutStorageAdapter();
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+        storage: storage,
+      );
+      await provider.loadData();
+
+      // Đánh dấu hoàn thành 1 bài tập trước khi kiểm tra đăng xuất
+      await provider.markExerciseCompleted('4', dateKey: '2026-11-10');
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Chuyển sang tab 'Cá nhân'
+      expect(find.text('Cá nhân'), findsOneWidget);
+      await tester.tap(find.text('Cá nhân'));
+      await tester.pumpAndSettle();
+
+      // Kiểm tra hiển thị email, mục Về ứng dụng và thông tin môn học (không có thuật ngữ kỹ thuật)
+      expect(find.text('sv.hutech@edu.vn'), findsOneWidget);
+      expect(find.text('Về ứng dụng'), findsOneWidget);
+      expect(find.text('FitPlan'), findsOneWidget);
+      expect(
+        find.text('Môn: Lập trình trên thiết bị di động - HUTECH'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Lịch tập và kết quả được lưu trên thiết bị này.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('JSON Serialization'), findsNothing);
+      expect(find.textContaining('ChangeNotifier'), findsNothing);
+      expect(find.textContaining('Local Persistence'), findsNothing);
+
+      // 1. Bấm Đăng xuất rồi chọn Hủy -> giữ nguyên trạng thái
+      await tester.ensureVisible(find.byKey(const Key('logout_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('logout_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Xác nhận đăng xuất'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('cancel_logout_button')));
+      await tester.pumpAndSettle();
+
+      expect(provider.isLoggedIn, isTrue);
+      expect(find.text('Về ứng dụng'), findsOneWidget);
+
+      // 2. Giả lập lỗi lưu khi bấm xác nhận Đăng xuất -> giữ phiên hiện tại và báo lỗi
+      storage.failLogoutOnce = true;
+      await tester.tap(find.byKey(const Key('logout_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('confirm_logout_button')));
+      await tester.pumpAndSettle();
+
+      expect(provider.isLoggedIn, isTrue);
+      expect(find.byType(LoginScreen), findsNothing);
+      expect(
+        find.textContaining('Không thể lưu trạng thái đăng xuất'),
+        findsOneWidget,
+      );
+
+      // Đóng SnackBar lỗi trước khi bấm lại nút Đăng xuất
+      ScaffoldMessenger.of(
+        tester.element(find.byKey(const Key('logout_button'))),
+      ).clearSnackBars();
+      await tester.pumpAndSettle();
+
+      // 3. Bấm Đăng xuất và xác nhận thành công -> chuyển về LoginScreen
+      await tester.tap(find.byKey(const Key('logout_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('confirm_logout_button')));
+      await tester.pumpAndSettle();
+
+      expect(provider.isLoggedIn, isFalse);
+      expect(find.byType(LoginScreen), findsOneWidget);
+
+      // Kiểm tra nút Back không thể quay lại màn hình bên trong
+      final NavigatorState nav = tester.state(find.byType(Navigator));
+      expect(nav.canPop(), isFalse);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(LoginScreen), findsOneWidget);
+
+      // 4. Đăng nhập lại -> hiển thị màn hình chào "Bạn muốn bắt đầu từ đâu?", sau đó vào ứng dụng dữ liệu vẫn còn nguyên
+      await tester.enterText(
+        find.byKey(const Key('login_password_field')),
+        '123456',
+      );
+      await tester.tap(find.byKey(const Key('login_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(provider.isLoggedIn, isTrue);
+      expect(find.byType(WelcomeChoiceScreen), findsOneWidget);
+      expect(find.text('Bạn muốn bắt đầu từ đâu?'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('welcome_option_today_plan')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DashboardScreen), findsOneWidget);
+      expect(
+        provider.isExerciseCompletedOn('4', dateKey: '2026-11-10'),
+        isTrue,
+      );
+      expect(find.text('Tiến độ hoàn thành: 1/2 bài'), findsOneWidget);
+      expect(provider.weight, closeTo(67.5, 1e-6));
+      expect(provider.height, closeTo(172.5, 1e-6));
+    },
+  );
+
+  testWidgets(
+    'Luồng màn hình chào sau đăng nhập: kiểm tra cả 3 lựa chọn, nút Vào ứng dụng, mở lại app khi còn phiên và chặn Back',
+    (WidgetTester tester) async {
+      // 1. Khi mở lại ứng dụng mà phiên đăng nhập đã lưu sẵn -> vào thẳng DashboardScreen, không hiện WelcomeChoiceScreen
+      SharedPreferences.setMockInitialValues({
+        'isLoggedIn': true,
+        'userEmail': 'sv.hutech@edu.vn',
+      });
+      final activeProvider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await activeProvider.loadData();
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: activeProvider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WelcomeChoiceScreen), findsNothing);
+      expect(find.byType(DashboardScreen), findsOneWidget);
+
+      // 2. Đăng xuất rồi đăng nhập -> hiện WelcomeChoiceScreen; kiểm tra lựa chọn 2: "Xem tiến độ"
+      await activeProvider.logout();
+      await tester.pumpAndSettle();
+      expect(find.byType(LoginScreen), findsOneWidget);
+
+      // Đổi ngày đang chọn sang ngày khác trước khi đăng nhập để kiểm tra lựa chọn chào tự đưa về hôm nay
+      activeProvider.selectDate(DateTime(2026, 11, 15));
+      final exercisesSnapshotBefore = activeProvider.exercises.length;
+      final completionsSnapshotBefore = activeProvider.completions.length;
+
+      await tester.enterText(
+        find.byKey(const Key('login_password_field')),
+        '123456',
+      );
+      await tester.tap(find.byKey(const Key('login_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WelcomeChoiceScreen), findsOneWidget);
+      await tester.tap(find.byKey(const Key('welcome_option_today_stats')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WelcomeChoiceScreen), findsNothing);
+      expect(find.byType(DashboardScreen), findsOneWidget);
+      expect(activeProvider.dashboardTabIndex, 1);
+      expect(activeProvider.selectedDateKey, '2026-11-10');
+      expect(find.text('THỐNG KÊ NGÀY ĐANG CHỌN (10/11/2026)'), findsOneWidget);
+      // Không tự thay đổi lịch tập hoặc trạng thái hoàn thành
+      expect(activeProvider.exercises.length, exercisesSnapshotBefore);
+      expect(activeProvider.completions.length, completionsSnapshotBefore);
+
+      // Bấm Back không quay về WelcomeChoiceScreen hay LoginScreen
+      final NavigatorState nav = tester.state(find.byType(Navigator));
+      expect(nav.canPop(), isFalse);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(DashboardScreen), findsOneWidget);
+      expect(find.byType(WelcomeChoiceScreen), findsNothing);
+      expect(find.byType(LoginScreen), findsNothing);
+
+      // 3. Kiểm tra lựa chọn 3: "Cập nhật chỉ số cơ thể" -> mở tab Thống kê & BMI và cuộn đến khu vực nhập cân nặng/chiều cao
+      await activeProvider.logout();
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('login_password_field')),
+        '123456',
+      );
+      await tester.tap(find.byKey(const Key('login_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WelcomeChoiceScreen), findsOneWidget);
+      await tester.ensureVisible(
+        find.byKey(const Key('welcome_option_update_bmi')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('welcome_option_update_bmi')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DashboardScreen), findsOneWidget);
+      expect(activeProvider.dashboardTabIndex, 1);
+      expect(activeProvider.pendingScrollToBodyMetricsForm, isFalse);
+      expect(find.text('Cập nhật cân nặng & chiều cao'), findsOneWidget);
+
+      // 4. Kiểm tra nút phụ "Vào ứng dụng" -> mở tab Kế hoạch tập của hôm nay
+      await activeProvider.logout();
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('login_password_field')),
+        '123456',
+      );
+      await tester.tap(find.byKey(const Key('login_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WelcomeChoiceScreen), findsOneWidget);
+      await tester.ensureVisible(
+        find.byKey(const Key('welcome_enter_app_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('welcome_enter_app_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DashboardScreen), findsOneWidget);
+      expect(activeProvider.dashboardTabIndex, 0);
+      expect(activeProvider.selectedDateKey, '2026-11-10');
+      expect(find.text('Kế Hoạch Tập Luyện'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Bố cục màn hình nhỏ, cỡ chữ lớn, bàn phím mở và nội dung dài không bị tràn (overflow)',
+    (WidgetTester tester) async {
+      // Giả lập màn hình nhỏ (320 x 568), cỡ chữ lớn (1.25x) và bàn phím đang mở ở đáy
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 220);
+      tester.platformDispatcher.textScaleFactorTestValue = 1.25;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetViewInsets();
+        tester.platformDispatcher.clearTextScaleFactorTestValue();
+      });
+
+      SharedPreferences.setMockInitialValues({});
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await provider.loadData();
+
+      // Thêm bài tập có tên rất dài và ghi chú nhiều dòng
+      await provider.addExercise(
+        Exercise(
+          id: 'long_ex',
+          title: 'Bài tập phối hợp toàn thân cường độ cao dành cho sinh viên học kỳ cuối với tên rất dài',
+          category: 'Thể lực',
+          sets: 4,
+          reps: 45,
+          unit: ExerciseUnits.seconds,
+          calories: 220,
+          dayOfWeek: 'Mỗi ngày',
+          notes:
+              'Bước 1: Khởi động kỹ khớp cổ tay, cổ chân và vai trong 5 phút.\n'
+              'Bước 2: Giữ nhịp thở đều đặn trong suốt hiệp tập.\n'
+              'Bước 3: Nghỉ 45 giây giữa các hiệp và bổ sung nước.\n'
+              'Bước 4: Giãn cơ sau khi kết thúc buổi tập.',
+          scheduleType: ScheduleTypes.weekly,
+          repeatDays: const [1, 2, 3, 4, 5, 6, 7],
+          startDate: '2026-11-10',
+        ),
+      );
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Màn hình đăng nhập trên màn hình nhỏ + cỡ chữ lớn + bàn phím mở -> không overflow
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      // Đăng nhập để kiểm tra màn hình chào trên màn hình nhỏ + cỡ chữ lớn
+      await provider.login('sv.hutech@edu.vn');
+      await tester.pumpAndSettle();
+      expect(find.byType(WelcomeChoiceScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      provider.openTodayPlanFromWelcome();
+      await tester.pumpAndSettle();
+      expect(find.byType(DashboardScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      // Mở hộp thoại Thêm bài tập khi bàn phím đang mở -> không bị lỗi overflow
+      await tester.tap(find.text('Thêm bài tập'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('Hủy'));
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+
+      // Mở màn hình Chi tiết bài tập có tên & ghi chú dài trên màn hình nhỏ -> cuộn được, không overflow
+      await tester.drag(find.byType(ListView).first, const Offset(0, -140));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Bài tập phối hợp toàn thân'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('Bước 4: Giãn cơ'), findsOneWidget);
+    },
+  );
+}
+
+class _FailingLogoutStorageAdapter extends SharedPreferencesStorageAdapter {
+  bool failLogoutOnce = false;
+
+  @override
+  Future<bool> setBool(String key, bool value) async {
+    if (failLogoutOnce && key == 'isLoggedIn' && value == false) {
+      failLogoutOnce = false;
+      return false;
+    }
+    return super.setBool(key, value);
+  }
 }

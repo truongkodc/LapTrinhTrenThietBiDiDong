@@ -90,6 +90,9 @@ class WorkoutProvider extends ChangeNotifier {
   final WorkoutStorageAdapter _storage;
 
   bool _isLoggedIn = false;
+  bool _showPostLoginWelcome = false;
+  int _dashboardTabIndex = 0;
+  bool _pendingScrollToBodyMetricsForm = false;
   String _userEmail = '';
   double _weight = 68.0;
   double _height = 172.0;
@@ -173,6 +176,9 @@ class WorkoutProvider extends ChangeNotifier {
 
   // ---- Getters thông tin chung & BMI ----
   bool get isLoggedIn => _isLoggedIn;
+  bool get showPostLoginWelcome => _isLoggedIn && _showPostLoginWelcome;
+  int get dashboardTabIndex => _dashboardTabIndex;
+  bool get pendingScrollToBodyMetricsForm => _pendingScrollToBodyMetricsForm;
   String get userEmail => _userEmail;
   double get weight => _weight;
   double get height => _height;
@@ -758,35 +764,107 @@ class WorkoutProvider extends ChangeNotifier {
 
   // ---- Đăng nhập / Đăng xuất / BMI ----
   Future<bool> login(String email) {
+    final String capturedEmail = email.trim();
     return _enqueueTask(() async {
-      final ok1 = await _storage.setBool('isLoggedIn', true);
-      final ok2 = await _storage.setString('userEmail', email);
-      if (!ok1 || !ok2) {
-        _lastErrorMessage = 'Không thể lưu thông tin đăng nhập.';
+      try {
+        final ok1 = await _storage.setBool('isLoggedIn', true);
+        final ok2 = await _storage.setString('userEmail', capturedEmail);
+        if (!ok1 || !ok2) {
+          _lastErrorMessage =
+              'Không thể lưu thông tin đăng nhập. Vui lòng thử lại.';
+          notifyListeners();
+          return false;
+        }
+        _isLoggedIn = true;
+        _showPostLoginWelcome = true;
+        _dashboardTabIndex = 0;
+        _pendingScrollToBodyMetricsForm = false;
+        _userEmail = capturedEmail;
+        _lastErrorMessage = null;
+        notifyListeners();
+        return true;
+      } catch (_) {
+        _lastErrorMessage =
+            'Không thể lưu thông tin đăng nhập. Vui lòng thử lại.';
         notifyListeners();
         return false;
       }
-      _isLoggedIn = true;
-      _userEmail = email;
-      _lastErrorMessage = null;
-      notifyListeners();
-      return true;
     });
   }
 
   Future<bool> logout() {
     return _enqueueTask(() async {
-      final ok = await _storage.setBool('isLoggedIn', false);
-      if (!ok) {
-        _lastErrorMessage = 'Không thể đăng xuất.';
+      try {
+        final ok = await _storage.setBool('isLoggedIn', false);
+        if (!ok) {
+          _lastErrorMessage =
+              'Không thể lưu trạng thái đăng xuất. Vui lòng thử lại.';
+          notifyListeners();
+          return false;
+        }
+        _isLoggedIn = false;
+        _showPostLoginWelcome = false;
+        _dashboardTabIndex = 0;
+        _pendingScrollToBodyMetricsForm = false;
+        _lastErrorMessage = null;
+        notifyListeners();
+        return true;
+      } catch (_) {
+        _lastErrorMessage =
+            'Không thể lưu trạng thái đăng xuất. Vui lòng thử lại.';
         notifyListeners();
         return false;
       }
-      _isLoggedIn = false;
-      _lastErrorMessage = null;
-      notifyListeners();
-      return true;
     });
+  }
+
+  // ---- Điều hướng từ màn hình chào sau đăng nhập & chuyển tab Dashboard ----
+
+  /// Chọn "Kế hoạch hôm nay" hoặc "Vào ứng dụng": mở Dashboard ở tab Kế hoạch, chọn ngày hôm nay.
+  void openTodayPlanFromWelcome() {
+    _selectedDate = todayDate;
+    _dashboardTabIndex = 0;
+    _pendingScrollToBodyMetricsForm = false;
+    _showPostLoginWelcome = false;
+    notifyListeners();
+  }
+
+  /// Chọn "Xem tiến độ": mở Dashboard ở tab Thống kê & BMI, chọn ngày hôm nay.
+  void openTodayStatsFromWelcome() {
+    _selectedDate = todayDate;
+    _dashboardTabIndex = 1;
+    _pendingScrollToBodyMetricsForm = false;
+    _showPostLoginWelcome = false;
+    notifyListeners();
+  }
+
+  /// Chọn "Cập nhật chỉ số cơ thể": mở tab Thống kê & BMI và yêu cầu cuộn tới biểu mẫu cân nặng/chiều cao.
+  void openBodyMetricsUpdateFromWelcome() {
+    _dashboardTabIndex = 1;
+    _pendingScrollToBodyMetricsForm = true;
+    _showPostLoginWelcome = false;
+    notifyListeners();
+  }
+
+  /// Chuyển tab trên DashboardScreen
+  void setDashboardTabIndex(int index) {
+    final int clamped = index.clamp(0, 2);
+    if (_dashboardTabIndex == clamped &&
+        !(clamped != 1 && _pendingScrollToBodyMetricsForm)) {
+      return;
+    }
+    _dashboardTabIndex = clamped;
+    if (clamped != 1) {
+      _pendingScrollToBodyMetricsForm = false;
+    }
+    notifyListeners();
+  }
+
+  /// Tiêu thụ yêu cầu cuộn tới biểu mẫu cân nặng/chiều cao sau khi giao diện dựng xong
+  bool consumePendingScrollToBodyMetricsForm() {
+    if (!_pendingScrollToBodyMetricsForm) return false;
+    _pendingScrollToBodyMetricsForm = false;
+    return true;
   }
 
   Future<bool> updateBodyMetrics(double newWeight, double newHeight) {

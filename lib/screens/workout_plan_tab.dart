@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../app_theme.dart';
 import '../helpers/date_utils_helper.dart';
 import '../models/day_workout_item.dart';
 import '../models/exercise.dart';
@@ -133,6 +134,7 @@ class WorkoutPlanTab extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: selectedCategory,
                     decoration: const InputDecoration(
                       labelText: 'Nhóm bài tập',
@@ -148,6 +150,7 @@ class WorkoutPlanTab extends StatelessWidget {
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     key: const Key('exercise_unit_dropdown'),
+                    isExpanded: true,
                     initialValue: selectedUnit,
                     decoration: const InputDecoration(
                       labelText: 'Đơn vị mỗi hiệp',
@@ -214,6 +217,7 @@ class WorkoutPlanTab extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: scheduleType,
                     decoration: const InputDecoration(
                       labelText: 'Kiểu lịch tập',
@@ -221,11 +225,17 @@ class WorkoutPlanTab extends StatelessWidget {
                     items: const [
                       DropdownMenuItem(
                         value: ScheduleTypes.once,
-                        child: Text('Tập một lần vào ngày cụ thể'),
+                        child: Text(
+                          'Tập một lần vào ngày cụ thể',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       DropdownMenuItem(
                         value: ScheduleTypes.weekly,
-                        child: Text('Lặp hằng tuần theo thứ'),
+                        child: Text(
+                          'Lặp hằng tuần theo thứ',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                     onChanged: isSubmitting
@@ -273,9 +283,11 @@ class WorkoutPlanTab extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Chọn các thứ trong tuần:',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                        const Expanded(
+                          child: Text(
+                            'Chọn các thứ trong tuần:',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
                         TextButton(
                           onPressed: isSubmitting
@@ -548,17 +560,22 @@ class WorkoutPlanTab extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Xác nhận xóa / ngừng lịch'),
-        content: Text(
-          'Bạn có chắc chắn muốn ngừng bài tập "${item.title}" từ hôm nay (${DateUtilsHelper.formatDisplayDateKey(provider.todayDateKey)}) trở đi không?\n\nLịch sử và kết quả đã hoàn thành vẫn được giữ nguyên.',
+        title: Text('Ngừng lịch "${item.title}"'),
+        content: const Text(
+          'Ngừng lịch tập này từ hôm nay? Kết quả đã hoàn thành vẫn được giữ lại.',
         ),
         actions: [
           TextButton(
+            key: const Key('cancel_stop_schedule_button'),
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Hủy'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            key: const Key('confirm_stop_schedule_button'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.errorColor,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () async {
               Navigator.of(ctx).pop();
               final bool deleted = await provider.deleteExercise(item.id);
@@ -568,7 +585,7 @@ class WorkoutPlanTab extends StatelessWidget {
               if (deleted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Đã xóa "${item.title}"'),
+                    content: Text('Đã ngừng lịch "${item.title}" từ hôm nay.'),
                     action: SnackBarAction(
                       label: 'Hoàn tác (Undo)',
                       onPressed: () async {
@@ -581,9 +598,9 @@ class WorkoutPlanTab extends StatelessWidget {
                             SnackBar(
                               content: Text(
                                 provider.lastErrorMessage ??
-                                    'Không thể hoàn tác xóa bài tập.',
+                                    'Không thể hoàn tác lịch tập.',
                               ),
-                              backgroundColor: Colors.red,
+                              backgroundColor: AppTheme.errorColor,
                             ),
                           );
                         }
@@ -596,14 +613,17 @@ class WorkoutPlanTab extends StatelessWidget {
                   SnackBar(
                     content: Text(
                       provider.lastErrorMessage ??
-                          'Không thể xóa bài tập. Vui lòng thử lại.',
+                          'Không thể ngừng lịch bài tập. Vui lòng thử lại.',
                     ),
-                    backgroundColor: Colors.red,
+                    backgroundColor: AppTheme.errorColor,
                   ),
                 );
               }
             },
-            child: const Text('Xóa', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Ngừng lịch',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -705,7 +725,7 @@ class WorkoutPlanTab extends StatelessWidget {
 
   Widget _buildDateSelectorBar(BuildContext context, WorkoutProvider provider) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
@@ -715,7 +735,7 @@ class WorkoutPlanTab extends StatelessWidget {
           IconButton(
             key: const Key('prev_day_button'),
             tooltip: 'Ngày trước',
-            icon: const Icon(Icons.chevron_left),
+            icon: const Icon(Icons.chevron_left, color: AppTheme.primaryColor),
             onPressed: provider.goToPreviousDay,
           ),
           Expanded(
@@ -731,7 +751,7 @@ class WorkoutPlanTab extends StatelessWidget {
                     const Icon(
                       Icons.calendar_today,
                       size: 18,
-                      color: Colors.teal,
+                      color: AppTheme.primaryColor,
                     ),
                     const SizedBox(width: 8),
                     Flexible(
@@ -742,6 +762,7 @@ class WorkoutPlanTab extends StatelessWidget {
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 15,
+                          color: AppTheme.textPrimary,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -750,16 +771,20 @@ class WorkoutPlanTab extends StatelessWidget {
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
+                          horizontal: 8,
+                          vertical: 2.5,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.teal,
+                          color: AppTheme.amberAccentColor,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Text(
                           'Hôm nay',
-                          style: TextStyle(color: Colors.white, fontSize: 11),
+                          style: TextStyle(
+                            color: AppTheme.amberOnColor,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],
@@ -771,14 +796,17 @@ class WorkoutPlanTab extends StatelessWidget {
           IconButton(
             key: const Key('next_day_button'),
             tooltip: 'Ngày sau',
-            icon: const Icon(Icons.chevron_right),
+            icon: const Icon(Icons.chevron_right, color: AppTheme.primaryColor),
             onPressed: provider.goToNextDay,
           ),
           if (!provider.isSelectedDateToday)
             TextButton(
               key: const Key('go_today_button'),
               onPressed: provider.goToToday,
-              child: const Text('Hôm nay'),
+              child: const Text(
+                'Hôm nay',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
         ],
       ),
@@ -787,22 +815,32 @@ class WorkoutPlanTab extends StatelessWidget {
 
   Widget _buildProgressSummary(BuildContext context, WorkoutProvider provider) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.teal.shade50,
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: const BoxDecoration(
+        color: AppTheme.surfaceTint,
+        border: Border(bottom: BorderSide(color: Color(0xFFB2DFDB))),
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 'Tiến độ hoàn thành: ${provider.completedCount}/${provider.totalCountForSelectedDate} bài',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
+                ),
               ),
               Text(
                 '🔥 ${provider.totalCaloriesBurned} kcal (ước tính)',
                 style: const TextStyle(
-                  color: Colors.deepOrange,
+                  color: AppTheme.accentCaloriesColor,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -812,6 +850,8 @@ class WorkoutPlanTab extends StatelessWidget {
           LinearProgressIndicator(
             value: provider.progressPercentage,
             minHeight: 8,
+            color: AppTheme.primaryColor,
+            backgroundColor: Colors.white,
             borderRadius: BorderRadius.circular(4),
           ),
         ],
@@ -919,7 +959,7 @@ class WorkoutPlanTab extends StatelessWidget {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
       itemCount: list.length,
       itemBuilder: (ctx, index) {
         final DayWorkoutItem item = list[index];
@@ -927,14 +967,24 @@ class WorkoutPlanTab extends StatelessWidget {
             (item.exercise != null && !item.exercise!.isStopped)
             ? item.exercise
             : null;
+        final Color catColor = AppTheme.categoryColor(item.displayCategory);
 
         return Card(
-          elevation: 2,
+          color: item.isCompleted
+              ? AppTheme.completedCardBackground
+              : AppTheme.cardBackground,
           margin: const EdgeInsets.symmetric(vertical: 6),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.borderRadius),
+            side: BorderSide(
+              color: item.isCompleted
+                  ? AppTheme.primaryColor.withValues(alpha: 0.45)
+                  : const Color(0xFFD5E3E0),
+              width: item.isCompleted ? 1.3 : 1.0,
+            ),
           ),
-          child: ListTile(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppTheme.borderRadius),
             onTap: () {
               Navigator.push(
                 context,
@@ -947,96 +997,237 @@ class WorkoutPlanTab extends StatelessWidget {
                 ),
               );
             },
-            leading: Checkbox(
-              value: item.isCompleted,
-              activeColor: Colors.teal,
-              onChanged: (_) async {
-                final ok = await provider.toggleComplete(
-                  item.exerciseId,
-                  dateKey: item.dateKey,
-                );
-                if (!ok && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        provider.lastErrorMessage ??
-                            'Không thể cập nhật trạng thái hoàn thành.',
-                      ),
-                      backgroundColor: Colors.orange.shade900,
-                    ),
-                  );
-                }
-              },
-            ),
-            title: Text(
-              item.displayTitle,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                decoration: item.isCompleted
-                    ? TextDecoration.lineThrough
-                    : null,
-              ),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${item.displayCategory} • ${item.displayVolumeLabel} • ~${item.displayCalories} kcal (ước tính)\n📅 ${item.displayScheduleLabel}',
-                ),
-                if (item.legacyCompletedWithoutDate)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 4),
-                    child: Text(
-                      '✓ Đã hoàn thành trước đây',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.teal,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-                if (item.isHistoricalCompletionOnly)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 4),
-                    child: Text(
-                      'Lưu từ lịch sử hoàn thành (lịch hiện tại đã thay đổi/ngừng)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blueGrey,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            isThreeLine: true,
-            trailing: activeEx == null
-                ? null
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Dòng riêng cho tiêu đề bài tập (Checkbox + Tiêu đề toàn chiều ngang)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      IconButton(
-                        tooltip: 'Sửa bài tập',
-                        icon: const Icon(
-                          Icons.edit_outlined,
-                          color: Colors.blue,
-                        ),
-                        onPressed: () => _showExerciseFormDialog(
-                          context,
-                          existing: activeEx,
-                        ),
+                      Checkbox(
+                        key: Key('checkbox_exercise_${item.exerciseId}'),
+                        value: item.isCompleted,
+                        activeColor: AppTheme.primaryColor,
+                        visualDensity: VisualDensity.compact,
+                        onChanged: (_) async {
+                          final ok = await provider.toggleComplete(
+                            item.exerciseId,
+                            dateKey: item.dateKey,
+                          );
+                          if (!ok && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  provider.lastErrorMessage ?? 'Không thể cập nhật trạng thái hoàn thành.',
+                                ),
+                                backgroundColor: Colors.orange.shade900,
+                              ),
+                            );
+                          }
+                        },
                       ),
-                      IconButton(
-                        tooltip: 'Xóa bài tập',
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.red,
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          item.displayTitle,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16.5,
+                            color: AppTheme.textPrimary,
+                          ),
                         ),
-                        onPressed: () =>
-                            _confirmDelete(context, provider, activeEx),
                       ),
                     ],
                   ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12, top: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 2. Nhóm bài tập và khối lượng
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: catColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    AppTheme.categoryIcon(item.displayCategory),
+                                    size: 13,
+                                    color: catColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    item.displayCategory,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: catColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              item.displayVolumeLabel,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        // 3. Kcal ước tính
+                        Text(
+                          '🔥 ~${item.displayCalories} kcal (ước tính)',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.accentCaloriesColor,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        // 4. Lịch tập
+                        Text(
+                          '📅 ${item.displayScheduleLabel}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                        // 5. Ghi chú lịch sử nếu có
+                        if (item.legacyCompletedWithoutDate)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              '✓ Đã hoàn thành trước đây',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.primaryColor,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        if (item.isHistoricalCompletionOnly)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Kết quả đã lưu từ lịch trước đây',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blueGrey,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        // 6. Vùng riêng cho huy hiệu "Đã hoàn thành" và nút Sửa / Ngừng lịch
+                        if (item.isCompleted || activeEx != null) ...[
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            width: double.infinity,
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              alignment: WrapAlignment.spaceBetween,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (item.isCompleted)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 9,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primaryColor.withValues(
+                                        alpha: 0.14,
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.check_circle,
+                                          size: 14,
+                                          color: AppTheme.primaryColor,
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Đã hoàn thành',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.primaryColor,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                else
+                                  const SizedBox.shrink(),
+                                if (activeEx != null)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        key: Key(
+                                          'edit_exercise_${activeEx.id}',
+                                        ),
+                                        tooltip: 'Sửa bài tập',
+                                        visualDensity: VisualDensity.compact,
+                                        icon: const Icon(
+                                          Icons.edit_outlined,
+                                          color: AppTheme.primaryColor,
+                                        ),
+                                        onPressed: () =>
+                                            _showExerciseFormDialog(
+                                              context,
+                                              existing: activeEx,
+                                            ),
+                                      ),
+                                      IconButton(
+                                        key: Key(
+                                          'delete_exercise_${activeEx.id}',
+                                        ),
+                                        tooltip: 'Ngừng lịch bài tập',
+                                        visualDensity: VisualDensity.compact,
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          color: AppTheme.errorColor,
+                                        ),
+                                        onPressed: () => _confirmDelete(
+                                          context,
+                                          provider,
+                                          activeEx,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       },

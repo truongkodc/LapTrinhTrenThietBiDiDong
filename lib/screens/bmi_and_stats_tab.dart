@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../app_theme.dart';
 import '../helpers/date_utils_helper.dart';
 import '../providers/workout_provider.dart';
 
@@ -16,6 +17,7 @@ class BmiAndStatsTab extends StatefulWidget {
 
 class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
   final _formKey = GlobalKey<FormState>();
+  final _bodyMetricsFormCardKey = GlobalKey();
   final _weightCtrl = TextEditingController();
   final _heightCtrl = TextEditingController();
   bool _isSaving = false;
@@ -87,6 +89,24 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
       ),
       body: Consumer<WorkoutProvider>(
         builder: (context, provider, _) {
+          if (provider.pendingScrollToBodyMetricsForm) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              provider.consumePendingScrollToBodyMetricsForm();
+              final targetContext = _bodyMetricsFormCardKey.currentContext;
+              if (targetContext != null) {
+                final disableAnimations =
+                    MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+                Scrollable.ensureVisible(
+                  targetContext,
+                  duration: disableAnimations
+                      ? Duration.zero
+                      : const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                );
+              }
+            });
+          }
           final validBmi = provider.validBmi;
           final dateText = DateUtilsHelper.formatDisplayDate(
             provider.selectedDate,
@@ -96,9 +116,9 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
             child: Form(
               key: _formKey,
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Card(
-                    color: Colors.white,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -109,7 +129,7 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
                               const Icon(
                                 Icons.calendar_today,
                                 size: 18,
-                                color: Colors.teal,
+                                color: AppTheme.primaryColor,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -118,34 +138,41 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
                                   style: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.bold,
+                                    color: AppTheme.textPrimary,
                                   ),
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 6,
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text(
                                 'Hoàn thành: ${provider.completedCount}/${provider.totalCountForSelectedDate} bài',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
+                                  color: AppTheme.textPrimary,
                                 ),
                               ),
                               Text(
                                 '🔥 ${provider.totalCaloriesBurned} kcal (ước tính)',
                                 style: const TextStyle(
-                                  color: Colors.deepOrange,
+                                  color: AppTheme.accentCaloriesColor,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 10),
                           LinearProgressIndicator(
                             value: provider.progressPercentage,
                             minHeight: 8,
+                            color: AppTheme.primaryColor,
+                            backgroundColor: AppTheme.surfaceTint,
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ],
@@ -154,9 +181,9 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
                   ),
                   const SizedBox(height: 16),
                   Card(
-                    color: Colors.teal.shade50,
+                    color: AppTheme.surfaceTint,
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(18),
                       child: Column(
                         children: [
                           const Text(
@@ -164,6 +191,7 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -173,20 +201,22 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
                               style: const TextStyle(
                                 fontSize: 42,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.teal,
+                                color: AppTheme.primaryColor,
                               ),
                             ),
+                            const SizedBox(height: 4),
                             Text(
                               _bmiEvaluate(validBmi),
                               style: const TextStyle(
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textPrimary,
                               ),
                               textAlign: TextAlign.center,
                             ),
                           ] else ...[
                             const Icon(
                               Icons.warning_amber_rounded,
-                              color: Colors.orange,
+                              color: AppTheme.warningColor,
                               size: 36,
                             ),
                             const SizedBox(height: 6),
@@ -194,7 +224,7 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
                               'Dữ liệu cân nặng hoặc chiều cao đang lưu không hợp lệ. Vui lòng nhập và cập nhật lại chỉ số bên dưới.',
                               style: TextStyle(
                                 fontWeight: FontWeight.w500,
-                                color: Colors.black87,
+                                color: AppTheme.textPrimary,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -204,90 +234,127 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          key: const Key('weight_input_field'),
-                          controller: _weightCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
+                  Card(
+                    key: _bodyMetricsFormCardKey,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'Cập nhật cân nặng & chiều cao',
+                            style: TextStyle(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
                           ),
-                          decoration: const InputDecoration(
-                            labelText: 'Cân nặng (kg)',
-                            border: OutlineInputBorder(),
-                            errorMaxLines: 3,
-                          ),
-                          validator: _validateWeight,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          key: const Key('height_input_field'),
-                          controller: _heightCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Chiều cao (cm)',
-                            border: OutlineInputBorder(),
-                            errorMaxLines: 3,
-                          ),
-                          validator: _validateHeight,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    key: const Key('update_bmi_button'),
-                    onPressed: _isSaving
-                        ? null
-                        : () async {
-                            if (!_formKey.currentState!.validate()) {
-                              return;
-                            }
-
-                            setState(() {
-                              _isSaving = true;
-                            });
-
-                            try {
-                              final ok = await provider
-                                  .updateBodyMetricsFromInput(
-                                    _weightCtrl.text,
-                                    _heightCtrl.text,
-                                  );
-                              if (!context.mounted) return;
-                              if (ok) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Đã cập nhật chỉ số BMI!'),
+                          const SizedBox(height: 12),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  key: const Key('weight_input_field'),
+                                  controller: _weightCtrl,
+                                  enabled: !_isSaving,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Cân nặng (kg)',
+                                    errorMaxLines: 3,
                                   ),
-                                );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      provider.lastErrorMessage ??
-                                          'Không thể lưu chỉ số BMI.',
-                                    ),
-                                    backgroundColor: Colors.red,
+                                  validator: _validateWeight,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextFormField(
+                                  key: const Key('height_input_field'),
+                                  controller: _heightCtrl,
+                                  enabled: !_isSaving,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Chiều cao (cm)',
+                                    errorMaxLines: 3,
                                   ),
-                                );
-                              }
-                            } finally {
-                              if (mounted) {
-                                setState(() {
-                                  _isSaving = false;
-                                });
-                              }
-                            }
-                          },
-                    icon: const Icon(Icons.calculate),
-                    label: const Text('Cập nhật chỉ số cơ thể'),
+                                  validator: _validateHeight,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              key: const Key('update_bmi_button'),
+                              onPressed: _isSaving
+                                  ? null
+                                  : () async {
+                                      if (!_formKey.currentState!.validate()) {
+                                        return;
+                                      }
+
+                                      setState(() {
+                                        _isSaving = true;
+                                      });
+
+                                      try {
+                                        final ok = await provider
+                                            .updateBodyMetricsFromInput(
+                                              _weightCtrl.text,
+                                              _heightCtrl.text,
+                                            );
+                                        if (!context.mounted) return;
+                                        if (ok) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Đã cập nhật chỉ số BMI!',
+                                                  ),
+                                                  backgroundColor:
+                                                      AppTheme.primaryColor,
+                                                ),
+                                              );
+                                        } else {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                provider.lastErrorMessage ??
+                                                    'Không thể lưu chỉ số BMI.',
+                                              ),
+                                              backgroundColor:
+                                                  AppTheme.errorColor,
+                                            ),
+                                          );
+                                        }
+                                      } finally {
+                                        if (mounted) {
+                                          setState(() {
+                                            _isSaving = false;
+                                          });
+                                        }
+                                      }
+                                    },
+                              icon: const Icon(Icons.calculate),
+                              label: Text(
+                                _isSaving
+                                    ? 'Đang cập nhật...'
+                                    : 'Cập nhật chỉ số cơ thể',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
