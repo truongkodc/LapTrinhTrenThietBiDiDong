@@ -1,6 +1,8 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
 import '../models/exercise.dart';
 
 // =============================================
@@ -128,7 +130,8 @@ class ApiService {
         return postsData.asMap().entries.map((entry) {
           final int index = entry.key;
           final Map<String, dynamic> post = entry.value;
-          final template = _exerciseTemplates[index % _exerciseTemplates.length];
+          final template =
+              _exerciseTemplates[index % _exerciseTemplates.length];
 
           return Exercise(
             id: 'api_${post['id']}',
@@ -143,9 +146,7 @@ class ApiService {
           );
         }).toList();
       } else {
-        throw Exception(
-          'Lỗi kết nối server: HTTP ${response.statusCode}',
-        );
+        throw Exception('Lỗi kết nối server: HTTP ${response.statusCode}');
       }
     } catch (e) {
       debugPrint('API Error: $e');

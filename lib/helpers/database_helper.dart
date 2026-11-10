@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+
 import '../models/exercise.dart';
 
 // =============================================
@@ -31,11 +32,7 @@ class DatabaseHelper {
   /// Khởi tạo database với bảng exercises
   Future<Database> _initDatabase() async {
     final String path = join(await getDatabasesPath(), _dbName);
-    return openDatabase(
-      path,
-      version: _dbVersion,
-      onCreate: _createDatabase,
-    );
+    return openDatabase(path, version: _dbVersion, onCreate: _createDatabase);
   }
 
   /// Tạo bảng exercises khi database được tạo lần đầu
@@ -122,11 +119,7 @@ class DatabaseHelper {
   /// DELETE: Xóa bài tập theo ID
   Future<int> deleteExercise(String id) async {
     final db = await database;
-    return db.delete(
-      tableExercises,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return db.delete(tableExercises, where: 'id = ?', whereArgs: [id]);
   }
 
   /// DELETE ALL: Xóa toàn bộ bài tập

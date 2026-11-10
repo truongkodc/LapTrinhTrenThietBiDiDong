@@ -138,4 +138,3 @@ class DateUtilsHelper {
     return sorted.map(weekdayShortLabel).join(', ');
   }
 }
-
