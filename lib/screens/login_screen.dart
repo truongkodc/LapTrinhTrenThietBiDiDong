@@ -18,19 +18,29 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController(text: 'sv.hutech@edu.vn');
   final _passwordController = TextEditingController();
 
-  void _submitLogin() {
+  Future<void> _submitLogin() async {
     if (_formKey.currentState!.validate()) {
-      Provider.of<WorkoutProvider>(
-        context,
-        listen: false,
-      ).login(_emailController.text.trim());
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đăng nhập thành công! Chào mừng bạn trở lại.'),
-          backgroundColor: Colors.teal,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      final provider = Provider.of<WorkoutProvider>(context, listen: false);
+      final ok = await provider.login(_emailController.text.trim());
+      if (!mounted) return;
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đăng nhập thành công! Chào mừng bạn trở lại.'),
+            backgroundColor: Colors.teal,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              provider.lastErrorMessage ?? 'Không thể lưu thông tin đăng nhập.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

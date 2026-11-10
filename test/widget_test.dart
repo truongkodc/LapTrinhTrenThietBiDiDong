@@ -4,6 +4,7 @@ import 'package:fitplan_hutech/app.dart';
 import 'package:fitplan_hutech/models/exercise.dart';
 import 'package:fitplan_hutech/providers/workout_provider.dart';
 import 'package:fitplan_hutech/screens/login_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,7 +17,9 @@ void main() {
 
     await tester.pumpWidget(
       ChangeNotifierProvider(
-        create: (_) => WorkoutProvider()..loadData(),
+        create: (_) =>
+            WorkoutProvider(clock: () => DateTime(2026, 11, 10, 9, 0))
+              ..loadData(),
         child: const FitPlanApp(),
       ),
     );
@@ -28,7 +31,7 @@ void main() {
     expect(find.text('ĐĂNG NHẬP'), findsOneWidget);
   });
 
-  test('Đọc JSON bài tập cấu trúc cũ (không có imagePath và createdAt) giữ nguyên dữ liệu và thứ tự', () async {
+  test('Đọc JSON bài tập cấu trúc cũ (không có imagePath và createdAt) giữ nguyên dữ liệu, thứ tự và quy tắc migration', () async {
     final singleOldExercise = Exercise.fromJson({
       'id': 'old_0',
       'title': 'Plank siết cơ bụng',
@@ -39,10 +42,11 @@ void main() {
       'dayOfWeek': 'Mỗi ngày',
       'notes': 'Giữ cơ thể tạo thành một đường thẳng từ đầu đến gót chân.',
       'isCompleted': true,
-    });
+    }, fallbackDateKey: '2026-11-10');
     expect(singleOldExercise.id, 'old_0');
     expect(singleOldExercise.imagePath, '');
     expect(singleOldExercise.createdAt, isNotEmpty);
+    expect(singleOldExercise.legacyCompletedWithoutDate, isTrue);
 
     final legacyExercisesJson = jsonEncode([
       {
@@ -78,13 +82,15 @@ void main() {
       'exercises_v2': legacyExercisesJson,
     });
 
-    final provider = WorkoutProvider();
+    // Cố định ngày migration là Thứ 2 (2026-11-09)
+    final provider = WorkoutProvider(clock: () => DateTime(2026, 11, 9, 8, 30));
     await provider.loadData();
 
     expect(provider.isLoggedIn, isTrue);
     expect(provider.userEmail, 'sv.hutech@edu.vn');
     expect(provider.weight, 70.5);
     expect(provider.height, 175.0);
+    expect(provider.migrationDate, '2026-11-09');
     expect(provider.exercises.length, 2);
 
     final first = provider.exercises[0];
@@ -94,14 +100,15 @@ void main() {
     expect(first.sets, 4);
     expect(first.reps, 10);
     expect(first.calories, 180);
-    expect(first.dayOfWeek, 'Thứ 2 - Thứ 5');
     expect(
       first.notes,
       'Giữ chặt bả vai trên ghế, hạ tạ chạm ngực dưới rồi đẩy thẳng.',
     );
-    expect(first.isCompleted, isTrue);
-    expect(first.imagePath, isEmpty);
-    expect(first.createdAt, isNotEmpty);
+    // isCompleted cũ được bảo toàn vào legacyCompletedWithoutDate, không tự tạo lịch sử hoàn thành theo ngày
+    expect(first.legacyCompletedWithoutDate, isTrue);
+    expect(provider.completions, isEmpty);
+    expect(first.repeatDays, [1, 4]);
+    expect(first.startDate, '2026-11-09');
 
     final second = provider.exercises[1];
     expect(second.id, 'legacy_2');
@@ -110,13 +117,141 @@ void main() {
     expect(second.sets, 1);
     expect(second.reps, 20);
     expect(second.calories, 300);
-    expect(second.dayOfWeek, 'Thứ 4 - Thứ 7');
     expect(
       second.notes,
       'Chạy nước rút 30 giây, đi bộ chậm 60 giây lặp lại 20 phút.',
     );
-    expect(second.isCompleted, isFalse);
-    expect(second.imagePath, isEmpty);
-    expect(second.createdAt, isNotEmpty);
+    expect(second.legacyCompletedWithoutDate, isFalse);
+    expect(second.repeatDays, [3, 6]);
   });
+
+  testWidgets(
+    'Giao diện lịch theo ngày: chuyển ngày, ngày 0/0, hiển thị nhãn lạ & hoàn thành trước đây, đồng bộ tab BMI',
+    (WidgetTester tester) async {
+      final legacyExercisesJson = jsonEncode([
+        {
+          'id': 'ex_today_1',
+          'title': 'Gập bụng cơ bản',
+          'category': 'Thể lực',
+          'sets': 3,
+          'reps': 20,
+          'calories': 100,
+          'dayOfWeek': 'Hôm nay',
+          'notes': 'Thở đều.',
+          'isCompleted': true,
+        },
+        {
+          'id': 'ex_unknown_1',
+          'title': 'Bơi tự do',
+          'category': 'Cardio',
+          'sets': 1,
+          'reps': 30,
+          'calories': 250,
+          'dayOfWeek': 'Khi nào rảnh',
+          'notes': 'Khởi động kỹ.',
+          'isCompleted': false,
+        },
+      ]);
+
+      SharedPreferences.setMockInitialValues({
+        'isLoggedIn': true,
+        'userEmail': 'sv.hutech@edu.vn',
+        'exercises_v2': legacyExercisesJson,
+      });
+
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0), // Thứ 3, 10/11/2026
+      );
+      await provider.loadData();
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Hiển thị ngày hôm nay (10/11/2026) và bài tập 'Hôm nay'
+      expect(find.textContaining('10/11/2026'), findsWidgets);
+      expect(find.text('Gập bụng cơ bản'), findsOneWidget);
+      expect(find.text('✓ Đã hoàn thành trước đây'), findsOneWidget);
+      expect(find.text('Tiến độ hoàn thành: 0/1 bài'), findsOneWidget);
+      expect(find.text('🔥 0 kcal (ước tính)'), findsOneWidget);
+
+      // Hiển thị khu vực cảnh báo bài tập có nhãn lịch cũ chưa nhận diện được
+      expect(
+        find.text('Bài tập có nhãn lịch cũ cần chọn lại lịch:'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Bơi tự do (Nhãn gốc: "Khi nào rảnh")'),
+        findsOneWidget,
+      );
+
+      // Đánh dấu hoàn thành bài tập trong ngày hôm nay (10/11/2026)
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tiến độ hoàn thành: 1/1 bài'), findsOneWidget);
+      expect(find.text('🔥 100 kcal (ước tính)'), findsOneWidget);
+
+      // Chuyển sang Tab Thống kê & BMI để kiểm tra số liệu khớp với ngày đang chọn
+      await tester.tap(find.text('Thống kê & BMI'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('THỐNG KÊ NGÀY ĐANG CHỌN (10/11/2026)'), findsOneWidget);
+      expect(find.text('Hoàn thành: 1/1 bài'), findsOneWidget);
+      expect(find.text('🔥 100 kcal (ước tính)'), findsOneWidget);
+
+      // Quay lại Tab Kế hoạch tập và chuyển sang ngày hôm sau (11/11/2026 - ngày không có bài tập)
+      await tester.tap(find.text('Kế hoạch tập'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('next_day_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('11/11/2026'), findsWidgets);
+      expect(find.text('Tiến độ hoàn thành: 0/0 bài'), findsOneWidget);
+      expect(find.text('🔥 0 kcal (ước tính)'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Chưa có bài tập nào trong mục này cho ngày 11/11/2026.',
+        ),
+        findsOneWidget,
+      );
+
+      // Bấm nút 'Hôm nay' để quay về ngày 10/11/2026
+      await tester.tap(find.byKey(const Key('go_today_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Tiến độ hoàn thành: 1/1 bài'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Hiển thị màn hình báo lỗi và nút Thử lại khi dữ liệu lưu trữ bị hỏng, chặn thêm bài tập',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({
+        'isLoggedIn': true,
+        WorkoutProvider.storeKeyV3: '{invalid_json',
+      });
+
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await provider.loadData();
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('retry_load_button')), findsOneWidget);
+      // Không hiển thị nút Thêm bài tập khi dữ liệu chưa tải được để tránh ghi đè
+      expect(find.text('Thêm bài tập'), findsNothing);
+    },
+  );
 }
