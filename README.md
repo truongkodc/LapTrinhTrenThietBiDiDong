@@ -21,11 +21,12 @@ Mục tiêu của đồ án:
 
 ## 👥 2. THÔNG TIN NHÓM THỰC HIỆN
 
-| STT | Họ và Tên | Mã số sinh viên (MSSV) | Lớp | Vai trò / Nhiệm vụ |
-|:---:|:---|:---:|:---:|:---|
-| 1 | [Điền Họ và Tên Thành Viên 1] | [Điền MSSV 1] | [Điền Lớp] | [Điền Vai trò / Nhiệm vụ] |
-| 2 | [Điền Họ và Tên Thành Viên 2] | [Điền MSSV 2] | [Điền Lớp] | [Điền Vai trò / Nhiệm vụ] |
-| 3 | [Điền Họ và Tên Thành Viên 3] | [Điền MSSV 3] | [Điền Lớp] | [Điền Vai trò / Nhiệm vụ] |
+| Họ và tên | MSSV | GitHub | Công việc thực tế |
+|---|---|---|---|
+| Nguyễn Văn Sơn Trường | 2380164898 | truongkodc | Khởi tạo dự án và xây dựng phiên bản FitPlan ban đầu bằng Flutter: giao diện ba tab, đăng nhập cục bộ, quản lý và phân loại bài tập, xem chi tiết, đánh dấu hoàn thành và thống kê tiến độ, tính BMI, lưu dữ liệu bằng SharedPreferences và màn hình hồ sơ nhóm. |
+| Châu Nhật Hữu | 2380600946 | huu2005 | Tiếp nhận và tổ chức lại mã nguồn; sửa lỗi; bổ sung lịch tập theo ngày và lịch sử hoàn thành, đơn vị bài tập, kiểm tra dữ liệu nhập, gợi ý kế hoạch theo quy tắc; hoàn thiện giao diện, hồ sơ và đăng xuất; kiểm thử, cập nhật README và quản lý các bản cập nhật trên Git. |
+
+Nhóm gồm 4 thành viên. Bảng này hiện ghi nhận phần việc đã xác nhận của 2 thành viên; thông tin và đóng góp của 2 thành viên còn lại sẽ được bổ sung sau.
 
 * **Giảng viên hướng dẫn / phụ trách:** [Điền Tên Giảng Viên Phụ Trách]
 * **Kho lưu trữ mã nguồn (GitHub):** [https://github.com/truongkodc/LapTrinhTrenThietBiDiDong.git](https://github.com/truongkodc/LapTrinhTrenThietBiDiDong.git)
