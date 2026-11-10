@@ -1,10 +1,12 @@
 import 'dart:convert';
 
 import 'package:fitplan_hutech/app.dart';
+import 'package:fitplan_hutech/helpers/plan_suggestion_helper.dart';
 import 'package:fitplan_hutech/models/exercise.dart';
 import 'package:fitplan_hutech/providers/workout_provider.dart';
 import 'package:fitplan_hutech/screens/dashboard_screen.dart';
 import 'package:fitplan_hutech/screens/login_screen.dart';
+import 'package:fitplan_hutech/screens/plan_suggestion_screen.dart';
 import 'package:fitplan_hutech/screens/welcome_choice_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -580,9 +582,18 @@ void main() {
       await tester.tap(find.text('Cá nhân'));
       await tester.pumpAndSettle();
 
-      // Kiểm tra hiển thị email, mục Về ứng dụng và thông tin môn học (không có thuật ngữ kỹ thuật)
+      // Kiểm tra hiển thị tên mặc định, email và hàng thu gọn Về ứng dụng
+      expect(find.text('Người dùng FitPlan'), findsOneWidget);
       expect(find.text('sv.hutech@edu.vn'), findsOneWidget);
-      expect(find.text('Về ứng dụng'), findsOneWidget);
+      expect(find.byIcon(Icons.verified_user), findsNothing);
+      expect(find.byKey(const Key('open_about_app_tile')), findsOneWidget);
+
+      // Bấm mở chi tiết Về ứng dụng -> kiểm tra nội dung và không có thuật ngữ kỹ thuật
+      await tester.ensureVisible(find.byKey(const Key('open_about_app_tile')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('open_about_app_tile')));
+      await tester.pumpAndSettle();
+
       expect(find.text('FitPlan'), findsOneWidget);
       expect(
         find.text('Môn: Lập trình trên thiết bị di động - HUTECH'),
@@ -595,6 +606,9 @@ void main() {
       expect(find.textContaining('JSON Serialization'), findsNothing);
       expect(find.textContaining('ChangeNotifier'), findsNothing);
       expect(find.textContaining('Local Persistence'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('close_about_app_button')));
+      await tester.pumpAndSettle();
 
       // 1. Bấm Đăng xuất rồi chọn Hủy -> giữ nguyên trạng thái
       await tester.ensureVisible(find.byKey(const Key('logout_button')));
@@ -854,7 +868,26 @@ void main() {
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.text('Hủy'));
+      await tester.pumpAndSettle();
+
+      // Chuyển sang tab Cá nhân trên màn hình nhỏ + cỡ chữ lớn + bàn phím mở, mở hộp thoại sửa tên -> không overflow
+      await tester.tap(find.text('Cá nhân'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('edit_display_name_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('edit_display_name_button')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('cancel_display_name_button')));
       tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Kế hoạch tập'));
       await tester.pumpAndSettle();
 
       // Mở màn hình Chi tiết bài tập có tên & ghi chú dài trên màn hình nhỏ -> cuộn được, không overflow
@@ -866,10 +899,548 @@ void main() {
       expect(find.textContaining('Bước 4: Giãn cơ'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'Tab Cá nhân hoàn chỉnh: chỉnh sửa tên (1-50 ký tự, lỗi lưu, bảo toàn sau tải lại & đăng xuất), đồng bộ Chỉ số cơ thể, Hướng dẫn sử dụng',
+    (WidgetTester tester) async {
+      // Khởi tạo với dữ liệu cũ chưa có userDisplayName và chỉ số BMI chưa hợp lệ
+      SharedPreferences.setMockInitialValues({
+        'isLoggedIn': true,
+        'userEmail': 'minh.anh.hutech@edu.vn',
+        'weight': -10.0,
+        'height': 0.0,
+      });
+
+      final storage = _FailingLogoutStorageAdapter();
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+        storage: storage,
+      );
+      await provider.loadData();
+
+      // Đổi ngày đang chọn sang 14/11/2026 để kiểm tra nút Cập nhật chỉ số từ Cá nhân không đổi ngày
+      provider.selectDate(DateTime(2026, 11, 14));
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Mở tab Cá nhân
+      await tester.tap(find.text('Cá nhân'));
+      await tester.pumpAndSettle();
+
+      // 1. Khi chưa đặt tên -> hiển thị "Người dùng FitPlan", không suy đoán từ email
+      expect(provider.displayName, 'Người dùng FitPlan');
+      expect(
+        find.byKey(const Key('profile_display_name_text')),
+        findsOneWidget,
+      );
+      expect(find.text('Người dùng FitPlan'), findsOneWidget);
+      expect(find.text('minh.anh.hutech@edu.vn'), findsOneWidget);
+
+      // 2. Mở hộp thoại Chỉnh sửa tên -> kiểm tra dữ liệu nhập không hợp lệ (chỉ khoảng trắng và > 50 ký tự)
+      await tester.tap(find.byKey(const Key('edit_display_name_button')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('display_name_input_field')),
+        '     ',
+      );
+      await tester.tap(find.byKey(const Key('save_display_name_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Tên hiển thị không được để trống (từ 1 đến 50 ký tự).'),
+        findsOneWidget,
+      );
+      expect(provider.displayName, 'Người dùng FitPlan');
+
+      final String tooLongName = 'A' * 51;
+      await tester.enterText(
+        find.byKey(const Key('display_name_input_field')),
+        tooLongName,
+      );
+      await tester.tap(find.byKey(const Key('save_display_name_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Tên hiển thị không được vượt quá 50 ký tự.'),
+        findsOneWidget,
+      );
+      // Giữ nguyên nội dung đang nhập trong ô
+      expect(find.text(tooLongName), findsOneWidget);
+
+      // 3. Giả lập lỗi lưu tên -> không cập nhật giao diện, giữ nguyên nội dung đang nhập và báo lỗi
+      storage.failSaveDisplayNameOnce = true;
+      await tester.enterText(
+        find.byKey(const Key('display_name_input_field')),
+        '  Nguyễn Minh Anh  ',
+      );
+      await tester.tap(find.byKey(const Key('save_display_name_button')));
+      await tester.pumpAndSettle();
+
+      expect(provider.displayName, 'Người dùng FitPlan');
+      expect(
+        find.byKey(const Key('display_name_save_error_text')),
+        findsOneWidget,
+      );
+      expect(find.text('  Nguyễn Minh Anh  '), findsOneWidget);
+
+      // 4. Bấm Lưu lại khi bộ nhớ hoạt động bình thường -> lưu thành công sau khi trim
+      await tester.tap(find.byKey(const Key('save_display_name_button')));
+      await tester.pumpAndSettle();
+
+      expect(provider.displayName, 'Nguyễn Minh Anh');
+      expect(find.text('Nguyễn Minh Anh'), findsOneWidget);
+
+      // Kiểm tra tải lại dữ liệu trên provider mới vẫn giữ tên đã lưu
+      final reloadedProvider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await reloadedProvider.loadData();
+      expect(reloadedProvider.displayName, 'Nguyễn Minh Anh');
+
+      // 5. Kiểm tra thẻ Chỉ số cơ thể khi dữ liệu chưa hợp lệ -> hiển thị "Chưa cập nhật"
+      expect(find.text('Chưa cập nhật'), findsNWidgets(3));
+
+      // Bấm "Cập nhật chỉ số" từ tab Cá nhân -> chuyển sang tab Thống kê & BMI, cuộn tới form và giữ nguyên ngày 14/11/2026
+      await tester.ensureVisible(
+        find.byKey(const Key('profile_update_bmi_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile_update_bmi_button')));
+      await tester.pumpAndSettle();
+
+      expect(provider.dashboardTabIndex, 1);
+      expect(provider.selectedDateKey, '2026-11-14');
+      expect(provider.pendingScrollToBodyMetricsForm, isFalse);
+      expect(find.text('THỐNG KÊ NGÀY ĐANG CHỌN (14/11/2026)'), findsOneWidget);
+
+      // Cập nhật cân nặng = 65, chiều cao = 170 rồi quay lại tab Cá nhân -> đồng bộ ngay
+      await tester.enterText(find.byKey(const Key('weight_input_field')), '65');
+      await tester.enterText(
+        find.byKey(const Key('height_input_field')),
+        '170',
+      );
+      await tester.ensureVisible(find.byKey(const Key('update_bmi_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('update_bmi_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Cá nhân'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('65 kg'), findsOneWidget);
+      expect(find.text('170 cm'), findsOneWidget);
+      expect(find.text('22.5 (Bình thường)'), findsOneWidget);
+
+      // 6. Mở mục "Hướng dẫn sử dụng" -> kiểm tra nội dung khớp hành vi thực tế
+      await tester.ensureVisible(
+        find.byKey(const Key('open_usage_guide_tile')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('open_usage_guide_tile')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1. Thêm bài tập và chọn kiểu lịch'), findsOneWidget);
+      expect(find.text('2. Chọn đơn vị cho mỗi hiệp'), findsOneWidget);
+      expect(
+        find.text('3. Chọn ngày xem lịch và đánh dấu hoàn thành'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('close_usage_guide_button')));
+      await tester.pumpAndSettle();
+
+      // 7. Đăng xuất và đăng nhập lại -> tên hiển thị vẫn được giữ nguyên
+      await provider.logout();
+      await tester.pumpAndSettle();
+      await provider.login('minh.anh.hutech@edu.vn');
+      provider.openTodayPlanFromWelcome();
+      provider.setDashboardTabIndex(2);
+      await tester.pumpAndSettle();
+
+      expect(provider.displayName, 'Nguyễn Minh Anh');
+      expect(find.text('Nguyễn Minh Anh'), findsOneWidget);
+    },
+  );
+
+  test('Bộ quy tắc Gợi ý kế hoạch: 3 mục tiêu tất định, đúng đơn vị, đọc dữ liệu cũ thiếu templateCode và nhận diện trùng chính xác', () {
+    // 1. Ba mục tiêu đều tạo đúng 3 bài mẫu cố định và cùng lựa chọn luôn cho cùng kết quả
+    final muscle1 = PlanSuggestionHelper.buildPreview(
+      goal: SuggestionGoals.muscleGain,
+      repeatDays: [5, 1, 3, 1],
+      startDateKey: '2026-11-10',
+    );
+    final muscle2 = PlanSuggestionHelper.buildPreview(
+      goal: SuggestionGoals.muscleGain,
+      repeatDays: [1, 3, 5],
+      startDateKey: '2026-11-10',
+    );
+    expect(muscle1.repeatDays, [1, 3, 5]);
+    expect(muscle1.templates.length, 3);
+    expect(
+      muscle1.templates.map((t) => t.code).toList(),
+      equals(muscle2.templates.map((t) => t.code).toList()),
+    );
+    expect(muscle1.templates.every((t) => t.category == 'Tăng cơ'), isTrue);
+    expect(
+      muscle1.templates.every((t) => t.unit == ExerciseUnits.reps),
+      isTrue,
+    );
+
+    final cardio = PlanSuggestionHelper.buildPreview(
+      goal: SuggestionGoals.cardio,
+      repeatDays: [2, 4, 6],
+      startDateKey: '2026-11-10',
+    );
+    expect(cardio.templates.length, 3);
+    expect(cardio.templates.every((t) => t.category == 'Cardio'), isTrue);
+    expect(
+      cardio.templates.map((t) => t.unit).toList(),
+      equals([
+        ExerciseUnits.minutes,
+        ExerciseUnits.seconds,
+        ExerciseUnits.minutes,
+      ]),
+    );
+
+    final general = PlanSuggestionHelper.buildPreview(
+      goal: SuggestionGoals.generalFitness,
+      repeatDays: [1, 4, 7],
+      startDateKey: '2026-11-10',
+    );
+    expect(general.templates.length, 3);
+    expect(
+      general.templates.map((t) => t.category).toSet(),
+      equals({'Tăng cơ', 'Cardio', 'Thể lực'}),
+    );
+    expect(
+      general.templates.map((t) => t.unit).toList(),
+      equals([
+        ExerciseUnits.reps,
+        ExerciseUnits.minutes,
+        ExerciseUnits.seconds,
+      ]),
+    );
+
+    // 2. Bài người dùng tự tạo trùng tên (templateCode == null) KHÔNG bị coi là trùng với bài gợi ý
+    final userCreatedSameTitle = Exercise(
+      id: 'user_ex_1',
+      title: 'Plank siết cơ bụng',
+      category: 'Thể lực',
+      sets: 3,
+      reps: 60,
+      unit: ExerciseUnits.seconds,
+      calories: 90,
+      dayOfWeek: 'T2, T5, CN',
+      scheduleType: ScheduleTypes.weekly,
+      repeatDays: const [1, 4, 7],
+      startDate: '2026-11-10',
+    );
+    expect(userCreatedSameTitle.templateCode, isNull);
+    expect(
+      PlanSuggestionHelper.isDuplicateActiveTemplateExercise(
+        userCreatedSameTitle,
+        templateCode: 'tpl_mixed_plank_core',
+        repeatDays: const [1, 4, 7],
+      ),
+      isFalse,
+    );
+
+    // 3. Bài gợi ý có cùng templateCode + cùng lịch thứ và đang hoạt động -> nhận diện trùng
+    final suggestedEx = general.templates[2].toExercise(
+      id: 'sug_1',
+      repeatDays: const [1, 4, 7],
+      startDateKey: '2026-11-10',
+    );
+    expect(suggestedEx.templateCode, 'tpl_mixed_plank_core');
+    expect(
+      PlanSuggestionHelper.isDuplicateActiveTemplateExercise(
+        suggestedEx,
+        templateCode: 'tpl_mixed_plank_core',
+        repeatDays: const [7, 1, 4],
+      ),
+      isTrue,
+    );
+
+    // Khác lịch thứ -> không trùng (được phép thêm)
+    expect(
+      PlanSuggestionHelper.isDuplicateActiveTemplateExercise(
+        suggestedEx,
+        templateCode: 'tpl_mixed_plank_core',
+        repeatDays: const [2, 6],
+      ),
+      isFalse,
+    );
+
+    // Đã ngừng lịch -> không chặn tạo lại
+    final stoppedSuggested = suggestedEx.stopScheduleFromToday('2026-11-10');
+    expect(
+      PlanSuggestionHelper.isDuplicateActiveTemplateExercise(
+        stoppedSuggested,
+        templateCode: 'tpl_mixed_plank_core',
+        repeatDays: const [1, 4, 7],
+      ),
+      isFalse,
+    );
+
+    // 4. Đọc dữ liệu JSON cũ thiếu trường templateCode và lưu/đọc lại bài có templateCode
+    final oldJsonWithoutTemplate = suggestedEx.toJson()..remove('templateCode');
+    final parsedOld = Exercise.fromJson(oldJsonWithoutTemplate);
+    expect(parsedOld.templateCode, isNull);
+
+    final roundTripSuggested = Exercise.fromJson(suggestedEx.toJson());
+    expect(roundTripSuggested.templateCode, 'tpl_mixed_plank_core');
+  });
+
+  testWidgets(
+    'Màn hình Gợi ý kế hoạch: kiểm tra xem trước/hủy không ghi dữ liệu, chặn bỏ hết thứ/bài, xử lý lỗi lưu, chống thêm trùng, thông báo ngày tập đầu tiên và bố cục màn hình nhỏ',
+    (WidgetTester tester) async {
+      // Giả lập màn hình nhỏ để kiểm chứng luôn khả năng cuộn và không overflow
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      SharedPreferences.setMockInitialValues({'isLoggedIn': true});
+      final storage = _FailingLogoutStorageAdapter();
+      // Hôm nay là Thứ 3 (2026-11-10)
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+        storage: storage,
+      );
+      await provider.loadData();
+
+      // Đánh dấu hoàn thành 1 bài cũ trước khi dùng Gợi ý kế hoạch
+      await provider.markExerciseCompleted('4', dateKey: '2026-11-10');
+      // Đổi ngày đang xem trên tab Kế hoạch sang ngày khác (2026-11-18) để kiểm tra Gợi ý luôn lấy hôm nay (2026-11-10)
+      provider.selectDate(DateTime(2026, 11, 18));
+
+      final initialExerciseCount = provider.exercises.length;
+      final initialCompletionCount = provider.completions.length;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Mở màn hình Gợi ý kế hoạch rồi bấm Hủy sau khi Xem gợi ý -> không ghi dữ liệu
+      await tester.tap(find.byKey(const Key('open_plan_suggestion_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PlanSuggestionScreen), findsOneWidget);
+      expect(find.text(PlanSuggestionHelper.referenceNotice), findsOneWidget);
+      // Ngày bắt đầu hiển thị là hôm nay (10/11/2026), không lấy ngày đang xem (18/11/2026)
+      expect(find.text('Ngày bắt đầu: 10/11/2026'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('generate_suggestion_preview_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('generate_suggestion_preview_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('suggestion_preview_card')), findsOneWidget);
+      expect(provider.exercises.length, initialExerciseCount);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('cancel_plan_suggestion_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('cancel_plan_suggestion_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PlanSuggestionScreen), findsNothing);
+      expect(provider.exercises.length, initialExerciseCount);
+
+      // 2. Mở lại màn hình Gợi ý kế hoạch: kiểm tra bỏ chọn hết thứ và bỏ chọn hết bài
+      await tester.tap(find.byKey(const Key('open_plan_suggestion_button')));
+      await tester.pumpAndSettle();
+
+      // Chọn mục tiêu "Vận động tổng hợp"
+      await tester.tap(
+        find.byKey(
+          const Key('suggest_goal_chip_${SuggestionGoals.generalFitness}'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Bỏ chọn mặc định T2, T4, T6 -> danh sách thứ rỗng
+      for (final day in [1, 3, 5]) {
+        await tester.ensureVisible(
+          find.byKey(Key('suggest_weekday_chip_$day')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('suggest_weekday_chip_$day')));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.ensureVisible(
+        find.byKey(const Key('generate_suggestion_preview_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('generate_suggestion_preview_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('suggest_weekday_error_text')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('suggestion_preview_card')), findsNothing);
+
+      // Chọn T4 (3) và T6 (5) - lưu ý hôm nay là Thứ 3 (10/11/2026) nên hôm nay KHÔNG thuộc thứ tập, buổi đầu tiên là Thứ 4 (11/11/2026)
+      for (final day in [3, 5]) {
+        await tester.ensureVisible(
+          find.byKey(Key('suggest_weekday_chip_$day')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('suggest_weekday_chip_$day')));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.ensureVisible(
+        find.byKey(const Key('generate_suggestion_preview_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('generate_suggestion_preview_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('suggestion_preview_card')), findsOneWidget);
+
+      // Bỏ chọn cả 3 bài mẫu -> bấm Thêm vào kế hoạch bị chặn
+      for (final code in [
+        'tpl_mixed_barbell_squat',
+        'tpl_mixed_hiit_treadmill',
+        'tpl_mixed_plank_core',
+      ]) {
+        final checkboxFinder = find.byKey(
+          Key('preview_template_checkbox_$code'),
+        );
+        await tester.ensureVisible(checkboxFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(checkboxFinder);
+        await tester.pumpAndSettle();
+      }
+
+      await tester.ensureVisible(
+        find.byKey(const Key('confirm_add_suggested_plan_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('confirm_add_suggested_plan_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('suggest_template_error_text')),
+        findsOneWidget,
+      );
+      expect(provider.exercises.length, initialExerciseCount);
+
+      // Chọn lại 2 bài mẫu ('tpl_mixed_barbell_squat' và 'tpl_mixed_plank_core')
+      for (final code in ['tpl_mixed_barbell_squat', 'tpl_mixed_plank_core']) {
+        final checkboxFinder = find.byKey(
+          Key('preview_template_checkbox_$code'),
+        );
+        await tester.ensureVisible(checkboxFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(checkboxFinder);
+        await tester.pumpAndSettle();
+      }
+
+      // 3. Giả lập lỗi lưu -> không thêm một phần, giữ nguyên bản xem trước để thử lại
+      storage.failSaveStoreOnce = true;
+      await tester.ensureVisible(
+        find.byKey(const Key('confirm_add_suggested_plan_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('confirm_add_suggested_plan_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PlanSuggestionScreen), findsOneWidget);
+      expect(provider.exercises.length, initialExerciseCount);
+      expect(
+        find.byKey(const Key('suggest_submit_error_text')),
+        findsOneWidget,
+      );
+
+      // 4. Thử lại khi bộ nhớ hoạt động bình thường -> lưu thành công cả 2 bài, đóng màn hình, đưa về hôm nay (10/11/2026) và báo ngày tập đầu tiên (11/11/2026)
+      ScaffoldMessenger.of(
+        tester.element(
+          find.byKey(const Key('confirm_add_suggested_plan_button')),
+        ),
+      ).clearSnackBars();
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const Key('confirm_add_suggested_plan_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('confirm_add_suggested_plan_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PlanSuggestionScreen), findsNothing);
+      expect(provider.exercises.length, initialExerciseCount + 2);
+      expect(provider.completions.length, initialCompletionCount);
+      expect(provider.selectedDateKey, '2026-11-10');
+      expect(
+        find.textContaining(
+          'Đã thêm 2 bài tập từ gợi ý vào kế hoạch. Hôm nay chưa thuộc thứ tập đã chọn; buổi tập đầu tiên vào ngày 11/11/2026.',
+        ),
+        findsOneWidget,
+      );
+
+      // 5. Thêm lại cùng bộ mẫu "Vận động tổng hợp" với cùng lịch T4, T6 -> bỏ qua 2 bài đã có, chỉ thêm 1 bài còn lại ('tpl_mixed_hiit_treadmill')
+      final templatesAll3 = PlanSuggestionHelper.templatesForGoal(
+        SuggestionGoals.generalFitness,
+      );
+      final secondAddResult = await provider.addSuggestedExercises(
+        selectedTemplates: templatesAll3,
+        repeatDays: const [3, 5],
+      );
+      expect(secondAddResult.success, isTrue);
+      expect(secondAddResult.addedCount, 1);
+      expect(secondAddResult.skippedDuplicateCount, 2);
+      expect(provider.exercises.length, initialExerciseCount + 3);
+
+      // Kiểm tra khởi động lại (loadData trên provider mới) vẫn giữ nguyên các bài gợi ý cùng templateCode
+      final reloadedProvider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await reloadedProvider.loadData();
+      expect(reloadedProvider.exercises.length, initialExerciseCount + 3);
+      expect(
+        reloadedProvider.exercises.where((e) => e.templateCode != null).length,
+        3,
+      );
+    },
+  );
 }
 
 class _FailingLogoutStorageAdapter extends SharedPreferencesStorageAdapter {
   bool failLogoutOnce = false;
+  bool failSaveDisplayNameOnce = false;
+  bool failSaveStoreOnce = false;
 
   @override
   Future<bool> setBool(String key, bool value) async {
@@ -878,5 +1449,18 @@ class _FailingLogoutStorageAdapter extends SharedPreferencesStorageAdapter {
       return false;
     }
     return super.setBool(key, value);
+  }
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (failSaveDisplayNameOnce && key == WorkoutProvider.displayNameKey) {
+      failSaveDisplayNameOnce = false;
+      return false;
+    }
+    if (failSaveStoreOnce && key == WorkoutProvider.storeKeyV3) {
+      failSaveStoreOnce = false;
+      return false;
+    }
+    return super.setString(key, value);
   }
 }

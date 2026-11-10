@@ -7,6 +7,7 @@ import '../models/day_workout_item.dart';
 import '../models/exercise.dart';
 import '../providers/workout_provider.dart';
 import 'exercise_detail_screen.dart';
+import 'plan_suggestion_screen.dart';
 
 // =========================================================
 // 5. TAB 1: DANH SÁCH KẾ HOẠCH TẬP THEO NGÀY + ĐẦY ĐỦ CRUD
@@ -639,7 +640,53 @@ class WorkoutPlanTab extends StatelessWidget {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Kế Hoạch Tập Luyện'),
-              centerTitle: true,
+              centerTitle: false,
+              actions: provider.hasLoadError
+                  ? null
+                  : [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: TextButton.icon(
+                          key: const Key('open_plan_suggestion_button'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.16,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            minimumSize: const Size(0, 34),
+                            visualDensity: VisualDensity.compact,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const PlanSuggestionScreen(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.auto_awesome_outlined,
+                            size: 16,
+                            color: AppTheme.amberAccentColor,
+                          ),
+                          label: const Text(
+                            'Gợi ý kế hoạch',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
               bottom: const TabBar(
                 isScrollable: true,
                 tabs: [
@@ -652,36 +699,52 @@ class WorkoutPlanTab extends StatelessWidget {
             ),
             body: provider.hasLoadError
                 ? _buildLoadErrorView(context, provider)
-                : Column(
-                    children: [
-                      _buildDateSelectorBar(context, provider),
-                      _buildProgressSummary(context, provider),
-                      if (provider.isSelectedDateInPast)
-                        _buildStatusBanner(
-                          icon: Icons.history,
-                          color: Colors.blueGrey,
-                          text:
-                              'Đang xem ngày quá khứ. Việc sửa hoặc ngừng lịch sẽ có hiệu lực từ hôm nay (${DateUtilsHelper.formatDisplayDateKey(provider.todayDateKey)}).',
-                        ),
-                      if (provider.isSelectedDateInFuture)
-                        _buildStatusBanner(
-                          icon: Icons.info_outline,
-                          color: Colors.orange.shade800,
-                          text: 'Đang xem ngày tương lai. Chỉ có thể đánh dấu hoàn thành cho hôm nay hoặc ngày đã qua.',
-                        ),
-                      if (provider.exercisesNeedingScheduleReview.isNotEmpty)
-                        _buildUnrecognizedScheduleBanner(context, provider),
-                      Expanded(
-                        child: TabBarView(
-                          children: [
-                            _buildExerciseList(context, provider, 'Tất cả'),
-                            _buildExerciseList(context, provider, 'Tăng cơ'),
-                            _buildExerciseList(context, provider, 'Cardio'),
-                            _buildExerciseList(context, provider, 'Thể lực'),
-                          ],
-                        ),
-                      ),
-                    ],
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final headerWidgets = <Widget>[
+                        _buildDateSelectorBar(context, provider),
+                        _buildProgressSummary(context, provider),
+                        if (provider.isSelectedDateInPast)
+                          _buildStatusBanner(
+                            icon: Icons.history,
+                            color: Colors.blueGrey,
+                            text:
+                                'Đang xem ngày quá khứ. Việc sửa hoặc ngừng lịch sẽ có hiệu lực từ hôm nay (${DateUtilsHelper.formatDisplayDateKey(provider.todayDateKey)}).',
+                          ),
+                        if (provider.isSelectedDateInFuture)
+                          _buildStatusBanner(
+                            icon: Icons.info_outline,
+                            color: Colors.orange.shade800,
+                            text: 'Đang xem ngày tương lai. Chỉ có thể đánh dấu hoàn thành cho hôm nay hoặc ngày đã qua.',
+                          ),
+                        if (provider.exercisesNeedingScheduleReview.isNotEmpty)
+                          _buildUnrecognizedScheduleBanner(context, provider),
+                      ];
+                      final tabBarView = TabBarView(
+                        children: [
+                          _buildExerciseList(context, provider, 'Tất cả'),
+                          _buildExerciseList(context, provider, 'Tăng cơ'),
+                          _buildExerciseList(context, provider, 'Cardio'),
+                          _buildExerciseList(context, provider, 'Thể lực'),
+                        ],
+                      );
+                      if (constraints.maxHeight < 260) {
+                        return SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              ...headerWidgets,
+                              SizedBox(height: 220, child: tabBarView),
+                            ],
+                          ),
+                        );
+                      }
+                      return Column(
+                        children: [
+                          ...headerWidgets,
+                          Expanded(child: tabBarView),
+                        ],
+                      );
+                    },
                   ),
             floatingActionButton: provider.hasLoadError
                 ? null
@@ -816,7 +879,7 @@ class WorkoutPlanTab extends StatelessWidget {
   Widget _buildProgressSummary(BuildContext context, WorkoutProvider provider) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
         color: AppTheme.surfaceTint,
         border: Border(bottom: BorderSide(color: Color(0xFFB2DFDB))),

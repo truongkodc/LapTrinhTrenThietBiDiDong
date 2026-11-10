@@ -42,10 +42,7 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
   }
 
   String _bmiEvaluate(double bmi) {
-    if (bmi < 18.5) return 'Thiếu cân (Cần tăng cơ & dinh dưỡng)';
-    if (bmi < 24.9) return 'Bình thường (Duy trì lịch tập đều đặn)';
-    if (bmi < 29.9) return 'Thừa cân (Ưu tiên thêm bài tập Cardio)';
-    return 'Béo phì (Cần kết hợp HIIT và thâm hụt Calo)';
+    return WorkoutProvider.evaluateBmiDetail(bmi);
   }
 
   String? _validateWeight(String? value) {

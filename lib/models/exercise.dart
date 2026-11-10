@@ -166,6 +166,8 @@ class Exercise {
   final bool needsScheduleReview; // true nếu nhãn lịch cũ không nhận diện được
   final bool legacyCompletedWithoutDate; // true nếu dữ liệu cũ có isCompleted
   final List<SchedulePeriod> scheduleHistory; // Các giai đoạn lịch trước đó
+  final String?
+  templateCode; // Mã bài mẫu nếu được tạo từ tính năng Gợi ý kế hoạch
 
   Exercise({
     required this.id,
@@ -190,6 +192,7 @@ class Exercise {
     this.needsScheduleReview = false,
     this.legacyCompletedWithoutDate = false,
     List<SchedulePeriod>? scheduleHistory,
+    this.templateCode,
   }) : createdAt = createdAt ?? DateTime.now().toIso8601String(),
        scheduleType = scheduleType ?? ScheduleTypes.weekly,
        repeatDays = List.unmodifiable(
@@ -434,6 +437,7 @@ class Exercise {
       needsScheduleReview: false,
       legacyCompletedWithoutDate: legacyCompletedWithoutDate,
       scheduleHistory: updatedHistory,
+      templateCode: templateCode,
     );
   }
 
@@ -704,6 +708,8 @@ class Exercise {
     'needsScheduleReview': needsScheduleReview,
     'legacyCompletedWithoutDate': legacyCompletedWithoutDate,
     'scheduleHistory': scheduleHistory.map((p) => p.toJson()).toList(),
+    if (templateCode != null && templateCode!.trim().isNotEmpty)
+      'templateCode': templateCode!.trim(),
   };
 
   /// Đọc Exercise từ JSON (hỗ trợ cả JSON Store v3 và JSON cũ thiếu trường unit)
@@ -803,7 +809,14 @@ class Exercise {
       needsScheduleReview: json['needsScheduleReview'] == true,
       legacyCompletedWithoutDate: json['legacyCompletedWithoutDate'] == true,
       scheduleHistory: parsedHistory,
+      templateCode: _parseOptionalTemplateCode(json['templateCode']),
     );
+  }
+
+  static String? _parseOptionalTemplateCode(dynamic raw) {
+    if (raw == null) return null;
+    final trimmed = raw.toString().trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   // ---- SQLite Serialization (Bài 6 P1 - sqflite) ----
@@ -864,6 +877,8 @@ class Exercise {
     bool? needsScheduleReview,
     bool? legacyCompletedWithoutDate,
     List<SchedulePeriod>? scheduleHistory,
+    String? templateCode,
+    bool clearTemplateCode = false,
   }) {
     return Exercise(
       id: id ?? this.id,
@@ -891,6 +906,9 @@ class Exercise {
       legacyCompletedWithoutDate:
           legacyCompletedWithoutDate ?? this.legacyCompletedWithoutDate,
       scheduleHistory: scheduleHistory ?? this.scheduleHistory,
+      templateCode: clearTemplateCode
+          ? null
+          : (templateCode ?? this.templateCode),
     );
   }
 

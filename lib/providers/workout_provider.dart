@@ -5,9 +5,57 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/date_utils_helper.dart';
+import '../helpers/plan_suggestion_helper.dart';
 import '../models/day_workout_item.dart';
 import '../models/exercise.dart';
 import '../models/workout_completion.dart';
+
+/// Kết quả thao tác thêm nhóm bài tập từ tính năng Gợi ý kế hoạch
+class SuggestedPlanAddResult {
+  final bool success;
+  final int addedCount;
+  final int skippedDuplicateCount;
+  final String startDateKey;
+  final DateTime firstWorkoutDate;
+  final bool isTodayInRepeatDays;
+  final String? errorMessage;
+
+  const SuggestedPlanAddResult({
+    required this.success,
+    required this.addedCount,
+    required this.skippedDuplicateCount,
+    required this.startDateKey,
+    required this.firstWorkoutDate,
+    required this.isTodayInRepeatDays,
+    this.errorMessage,
+  });
+
+  String get summaryMessage {
+    if (!success) {
+      return errorMessage ?? 'Không thể lưu kế hoạch gợi ý. Vui lòng thử lại.';
+    }
+    if (addedCount == 0 && skippedDuplicateCount > 0) {
+      return 'Không thêm bài mới: $skippedDuplicateCount bài đã chọn đều đang có sẵn với cùng lịch tập.';
+    }
+    final buffer = StringBuffer(
+      'Đã thêm $addedCount bài tập từ gợi ý vào kế hoạch',
+    );
+    if (skippedDuplicateCount > 0) {
+      buffer.write(
+        ' (bỏ qua $skippedDuplicateCount bài trùng lịch đang hoạt động)',
+      );
+    }
+    if (!isTodayInRepeatDays) {
+      final firstDateStr = DateUtilsHelper.formatDisplayDate(firstWorkoutDate);
+      buffer.write(
+        '. Hôm nay chưa thuộc thứ tập đã chọn; buổi tập đầu tiên vào ngày $firstDateStr.',
+      );
+    } else {
+      buffer.write('!');
+    }
+    return buffer.toString();
+  }
+}
 
 // ==================================================
 // ADAPTER LƯU TRỮ (Cho phép giả lập lỗi lưu trong kiểm thử)
@@ -81,6 +129,9 @@ class WorkoutProvider extends ChangeNotifier {
   static const String legacyExercisesKey = 'exercises_v2';
   static const String legacyBackupKey = 'exercises_v2_backup';
   static const String migrationDateLockKey = 'fitplan_migration_date_v3';
+  static const String displayNameKey = 'userDisplayName';
+  static const String defaultDisplayName = 'Người dùng FitPlan';
+  static const int maxDisplayNameLength = 50;
   static const int currentSchemaVersion = 3;
 
   static final RegExp _positiveIntRegex = RegExp(r'^\d+$');
@@ -93,6 +144,7 @@ class WorkoutProvider extends ChangeNotifier {
   bool _showPostLoginWelcome = false;
   int _dashboardTabIndex = 0;
   bool _pendingScrollToBodyMetricsForm = false;
+  String _displayName = '';
   String _userEmail = '';
   double _weight = 68.0;
   double _height = 172.0;
@@ -174,11 +226,59 @@ class WorkoutProvider extends ChangeNotifier {
     return result;
   }
 
+  /// Kiểm tra tên hiển thị: sau khi trim phải có từ 1 đến 50 ký tự.
+  /// Trả về thông báo lỗi tiếng Việt nếu không hợp lệ, hoặc null nếu hợp lệ.
+  static String? validateDisplayName(String? raw) {
+    if (raw == null) {
+      return 'Vui lòng nhập tên hiển thị (từ 1 đến 50 ký tự).';
+    }
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      return 'Tên hiển thị không được để trống (từ 1 đến 50 ký tự).';
+    }
+    if (trimmed.length > maxDisplayNameLength) {
+      return 'Tên hiển thị không được vượt quá $maxDisplayNameLength ký tự.';
+    }
+    return null;
+  }
+
+  /// Định dạng cân nặng hoặc chiều cao kèm đơn vị; trả về "Chưa cập nhật" nếu không hợp lệ.
+  static String formatBodyMetric(double? value, {required String unit}) {
+    if (!isValidBodyMetricValue(value)) {
+      return 'Chưa cập nhật';
+    }
+    final double v = value!;
+    if ((v - v.roundToDouble()).abs() < 1e-6) {
+      return '${v.round()} $unit';
+    }
+    return '${v.toStringAsFixed(1)} $unit';
+  }
+
+  /// Phân loại BMI ngắn gọn dùng chung
+  static String evaluateBmiShortLabel(double bmi) {
+    if (bmi < 18.5) return 'Thiếu cân';
+    if (bmi < 24.9) return 'Bình thường';
+    if (bmi < 29.9) return 'Thừa cân';
+    return 'Béo phì';
+  }
+
+  /// Đánh giá chi tiết BMI dùng chung
+  static String evaluateBmiDetail(double bmi) {
+    if (bmi < 18.5) return 'Thiếu cân (Cần tăng cơ & dinh dưỡng)';
+    if (bmi < 24.9) return 'Bình thường (Duy trì lịch tập đều đặn)';
+    if (bmi < 29.9) return 'Thừa cân (Ưu tiên thêm bài tập Cardio)';
+    return 'Béo phì (Cần kết hợp HIIT và thâm hụt Calo)';
+  }
+
   // ---- Getters thông tin chung & BMI ----
   bool get isLoggedIn => _isLoggedIn;
   bool get showPostLoginWelcome => _isLoggedIn && _showPostLoginWelcome;
   int get dashboardTabIndex => _dashboardTabIndex;
   bool get pendingScrollToBodyMetricsForm => _pendingScrollToBodyMetricsForm;
+  String get customDisplayName => _displayName;
+  bool get hasCustomDisplayName => _displayName.trim().isNotEmpty;
+  String get displayName =>
+      _displayName.trim().isEmpty ? defaultDisplayName : _displayName.trim();
   String get userEmail => _userEmail;
   double get weight => _weight;
   double get height => _height;
@@ -191,6 +291,23 @@ class WorkoutProvider extends ChangeNotifier {
 
   /// Getter BMI (trả về 0.0 khi dữ liệu không hợp lệ để không gây lỗi NaN/Infinity)
   double get bmi => validBmi ?? 0.0;
+
+  /// Chuỗi hiển thị cân nặng dùng chung (trả về "Chưa cập nhật" nếu dữ liệu không hợp lệ)
+  String get formattedWeight => hasValidBodyMetrics
+      ? formatBodyMetric(_weight, unit: 'kg')
+      : 'Chưa cập nhật';
+
+  /// Chuỗi hiển thị chiều cao dùng chung (trả về "Chưa cập nhật" nếu dữ liệu không hợp lệ)
+  String get formattedHeight => hasValidBodyMetrics
+      ? formatBodyMetric(_height, unit: 'cm')
+      : 'Chưa cập nhật';
+
+  /// Chuỗi hiển thị BMI dùng chung (trả về "Chưa cập nhật" nếu dữ liệu không hợp lệ)
+  String get formattedBmi {
+    final currentBmi = validBmi;
+    if (currentBmi == null) return 'Chưa cập nhật';
+    return '${currentBmi.toStringAsFixed(1)} (${evaluateBmiShortLabel(currentBmi)})';
+  }
 
   bool get hasLoadError => _hasLoadError;
   String? get loadErrorMessage => _loadErrorMessage;
@@ -446,6 +563,17 @@ class WorkoutProvider extends ChangeNotifier {
         _isLoggedIn = await _storage.getBool('isLoggedIn') ?? false;
         _userEmail =
             await _storage.getString('userEmail') ?? 'nhom.doan@hutech.edu.vn';
+
+        final String? storedDisplayName = await _storage.getString(
+          displayNameKey,
+        );
+        final String trimmedDisplayName = storedDisplayName?.trim() ?? '';
+        if (trimmedDisplayName.isNotEmpty &&
+            trimmedDisplayName.length <= maxDisplayNameLength) {
+          _displayName = trimmedDisplayName;
+        } else {
+          _displayName = '';
+        }
 
         final double? storedWeight = await _storage.getDouble('weight');
         final double? storedHeight = await _storage.getDouble('height');
@@ -838,12 +966,51 @@ class WorkoutProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Chọn "Cập nhật chỉ số cơ thể": mở tab Thống kê & BMI và yêu cầu cuộn tới biểu mẫu cân nặng/chiều cao.
+  /// Chọn "Cập nhật chỉ số cơ thể" từ màn hình chào: mở tab Thống kê & BMI và yêu cầu cuộn tới biểu mẫu cân nặng/chiều cao.
   void openBodyMetricsUpdateFromWelcome() {
     _dashboardTabIndex = 1;
     _pendingScrollToBodyMetricsForm = true;
     _showPostLoginWelcome = false;
     notifyListeners();
+  }
+
+  /// Mở phần cập nhật chỉ số cơ thể từ tab Cá nhân: chuyển sang tab Thống kê & BMI,
+  /// yêu cầu cuộn tới biểu mẫu nhưng giữ nguyên ngày đang chọn.
+  void openBodyMetricsUpdateFromProfile() {
+    _dashboardTabIndex = 1;
+    _pendingScrollToBodyMetricsForm = true;
+    notifyListeners();
+  }
+
+  /// Lưu tên hiển thị vào bộ nhớ cục bộ; chỉ cập nhật trạng thái khi lưu thành công.
+  Future<bool> updateDisplayName(String rawName) {
+    final String capturedRaw = rawName;
+    return _enqueueTask(() async {
+      final String? validationError = validateDisplayName(capturedRaw);
+      if (validationError != null) {
+        _lastErrorMessage = validationError;
+        notifyListeners();
+        return false;
+      }
+
+      final String trimmed = capturedRaw.trim();
+      try {
+        final bool ok = await _storage.setString(displayNameKey, trimmed);
+        if (!ok) {
+          _lastErrorMessage = 'Không thể lưu tên hiển thị. Vui lòng thử lại.';
+          notifyListeners();
+          return false;
+        }
+        _displayName = trimmed;
+        _lastErrorMessage = null;
+        notifyListeners();
+        return true;
+      } catch (_) {
+        _lastErrorMessage = 'Không thể lưu tên hiển thị. Vui lòng thử lại.';
+        notifyListeners();
+        return false;
+      }
+    });
   }
 
   /// Chuyển tab trên DashboardScreen
@@ -940,6 +1107,188 @@ class WorkoutProvider extends ChangeNotifier {
       _lastErrorMessage = null;
       notifyListeners();
       return true;
+    });
+  }
+
+  // ---- CREATE BATCH FROM SUGGESTION: Thêm nhóm bài từ Gợi ý kế hoạch ----
+  /// Lưu cả nhóm bài gợi ý trong một thao tác tuần tự:
+  /// - Ngày bắt đầu luôn là ngày địa phương hôm nay tại thời điểm xác nhận thêm.
+  /// - Bỏ qua bài mẫu đang còn hiệu lực với cùng mã mẫu + cùng lịch thứ trong tuần.
+  /// - Tạo trạng thái ứng viên -> lưu thành công -> cập nhật bộ nhớ và chuyển về hôm nay.
+  Future<SuggestedPlanAddResult> addSuggestedExercises({
+    required List<SuggestedExerciseTemplate> selectedTemplates,
+    required List<int> repeatDays,
+  }) {
+    final List<SuggestedExerciseTemplate> capturedTemplates =
+        List<SuggestedExerciseTemplate>.from(selectedTemplates);
+    final List<int> normalizedDays = PlanSuggestionHelper.normalizeWeekdays(
+      repeatDays,
+    );
+
+    SuggestedPlanAddResult? opResult;
+
+    return _enqueueTask(() async {
+      final DateTime currentToday = todayDate;
+      final String currentTodayKey = DateUtilsHelper.toDateKey(currentToday);
+      final DateTime firstDate =
+          PlanSuggestionHelper.firstScheduledDateFromToday(
+            currentToday,
+            normalizedDays,
+          );
+      final bool todayIncluded = normalizedDays.contains(currentToday.weekday);
+
+      if (!_checkCanMutate()) {
+        opResult = SuggestedPlanAddResult(
+          success: false,
+          addedCount: 0,
+          skippedDuplicateCount: 0,
+          startDateKey: currentTodayKey,
+          firstWorkoutDate: firstDate,
+          isTodayInRepeatDays: todayIncluded,
+          errorMessage: _lastErrorMessage,
+        );
+        return false;
+      }
+
+      if (normalizedDays.isEmpty) {
+        const msg = 'Vui lòng chọn ít nhất một thứ trong tuần.';
+        _lastErrorMessage = msg;
+        notifyListeners();
+        opResult = SuggestedPlanAddResult(
+          success: false,
+          addedCount: 0,
+          skippedDuplicateCount: 0,
+          startDateKey: currentTodayKey,
+          firstWorkoutDate: firstDate,
+          isTodayInRepeatDays: todayIncluded,
+          errorMessage: msg,
+        );
+        return false;
+      }
+
+      if (capturedTemplates.isEmpty) {
+        const msg =
+            'Vui lòng giữ lại ít nhất một bài tập trước khi thêm vào kế hoạch.';
+        _lastErrorMessage = msg;
+        notifyListeners();
+        opResult = SuggestedPlanAddResult(
+          success: false,
+          addedCount: 0,
+          skippedDuplicateCount: 0,
+          startDateKey: currentTodayKey,
+          firstWorkoutDate: firstDate,
+          isTodayInRepeatDays: todayIncluded,
+          errorMessage: msg,
+        );
+        return false;
+      }
+
+      final List<Exercise> candidateExercises = List<Exercise>.from(_exercises);
+      final Set<String> usedIds = candidateExercises.map((e) => e.id).toSet();
+      final List<Exercise> toAdd = [];
+      int skippedDuplicates = 0;
+      final int baseEpoch = DateTime.now().microsecondsSinceEpoch;
+      final String createdIso = _clock().toIso8601String();
+      int seq = 0;
+
+      for (final tpl in capturedTemplates) {
+        final bool isDuplicate = candidateExercises.any(
+          (existing) => PlanSuggestionHelper.isDuplicateActiveTemplateExercise(
+            existing,
+            templateCode: tpl.code,
+            repeatDays: normalizedDays,
+          ),
+        );
+        if (isDuplicate) {
+          skippedDuplicates++;
+          continue;
+        }
+
+        String candidateId;
+        do {
+          seq++;
+          candidateId = 'suggest_${baseEpoch}_$seq';
+        } while (usedIds.contains(candidateId));
+        usedIds.add(candidateId);
+
+        final Exercise createdExercise = tpl.toExercise(
+          id: candidateId,
+          repeatDays: normalizedDays,
+          startDateKey: currentTodayKey,
+          createdAt: createdIso,
+        );
+        if (!_validateExerciseForMutation(createdExercise, isEdit: false)) {
+          opResult = SuggestedPlanAddResult(
+            success: false,
+            addedCount: 0,
+            skippedDuplicateCount: skippedDuplicates,
+            startDateKey: currentTodayKey,
+            firstWorkoutDate: firstDate,
+            isTodayInRepeatDays: todayIncluded,
+            errorMessage: _lastErrorMessage,
+          );
+          return false;
+        }
+        toAdd.add(createdExercise);
+        candidateExercises.add(createdExercise);
+      }
+
+      // Đưa các bài vừa thêm lên đầu danh sách nhưng vẫn giữ đúng thứ tự trong gói mẫu
+      if (toAdd.isNotEmpty) {
+        candidateExercises.removeWhere((e) => toAdd.contains(e));
+        candidateExercises.insertAll(0, toAdd);
+
+        final bool saved = await _persistStoreCandidate(
+          exercises: candidateExercises,
+          completions: _completions,
+          migrationDate: _migrationDate,
+        );
+        if (!saved) {
+          const msg =
+              'Không thể lưu kế hoạch gợi ý. Dữ liệu hiện tại vẫn giữ nguyên, vui lòng thử lại.';
+          _lastErrorMessage = msg;
+          notifyListeners();
+          opResult = SuggestedPlanAddResult(
+            success: false,
+            addedCount: 0,
+            skippedDuplicateCount: skippedDuplicates,
+            startDateKey: currentTodayKey,
+            firstWorkoutDate: firstDate,
+            isTodayInRepeatDays: todayIncluded,
+            errorMessage: msg,
+          );
+          return false;
+        }
+
+        _exercises = candidateExercises;
+      }
+
+      _selectedDate = currentToday;
+      _dashboardTabIndex = 0;
+      _lastErrorMessage = null;
+      notifyListeners();
+
+      opResult = SuggestedPlanAddResult(
+        success: true,
+        addedCount: toAdd.length,
+        skippedDuplicateCount: skippedDuplicates,
+        startDateKey: currentTodayKey,
+        firstWorkoutDate: firstDate,
+        isTodayInRepeatDays: todayIncluded,
+      );
+      return true;
+    }).then((_) {
+      final fallbackToday = todayDate;
+      return opResult ??
+          SuggestedPlanAddResult(
+            success: false,
+            addedCount: 0,
+            skippedDuplicateCount: 0,
+            startDateKey: DateUtilsHelper.toDateKey(fallbackToday),
+            firstWorkoutDate: fallbackToday,
+            isTodayInRepeatDays: false,
+            errorMessage: _lastErrorMessage ?? 'Không thể lưu kế hoạch gợi ý.',
+          );
     });
   }
 
