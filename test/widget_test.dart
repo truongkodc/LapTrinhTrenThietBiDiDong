@@ -254,4 +254,182 @@ void main() {
       expect(find.text('Thêm bài tập'), findsNothing);
     },
   );
+
+  testWidgets(
+    'Biểu mẫu thêm bài tập: đổi nhãn theo đơn vị, chặn lưu khi dữ liệu không hợp lệ (giữ nguyên text đã nhập) và lưu thành công với calories = 0',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'isLoggedIn': true});
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await provider.loadData();
+      final initialCount = provider.exercises.length;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Mở hộp thoại Thêm bài tập
+      await tester.tap(find.text('Thêm bài tập'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Số lần mỗi hiệp'), findsOneWidget);
+
+      // Đổi đơn vị sang 'giây' -> nhãn đổi thành 'Số giây mỗi hiệp'
+      await tester.tap(find.byKey(const Key('exercise_unit_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('giây').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Số giây mỗi hiệp'), findsOneWidget);
+
+      // Nhập dữ liệu không hợp lệ: tên rỗng, số hiệp = 0, số giây = -5, calo = -10
+      await tester.enterText(
+        find.byKey(const Key('exercise_title_field')),
+        '   ',
+      );
+      await tester.enterText(find.byKey(const Key('exercise_sets_field')), '0');
+      await tester.enterText(
+        find.byKey(const Key('exercise_quantity_field')),
+        '-5',
+      );
+      await tester.enterText(
+        find.byKey(const Key('exercise_calories_field')),
+        '-10',
+      );
+
+      await tester.tap(find.byKey(const Key('save_exercise_button')));
+      await tester.pumpAndSettle();
+
+      // Không được đóng dialog hay tự ý gán mặc định để lưu
+      expect(find.text('Thêm bài tập mới'), findsOneWidget);
+      expect(provider.exercises.length, initialCount);
+      expect(find.text('Vui lòng nhập tên bài tập'), findsOneWidget);
+      expect(
+        find.text('Số hiệp phải là số nguyên dương (> 0)'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Số giây mỗi hiệp phải là số nguyên dương (> 0)'),
+        findsOneWidget,
+      );
+      expect(find.text('Kcal phải là số nguyên từ 0 trở lên'), findsOneWidget);
+
+      // Giữ nguyên dữ liệu người dùng vừa gõ để sửa lại
+      expect(find.text('-5'), findsOneWidget);
+      expect(find.text('-10'), findsOneWidget);
+
+      // Sửa lại dữ liệu hợp lệ (calories = 0 được phép)
+      await tester.enterText(
+        find.byKey(const Key('exercise_title_field')),
+        'Giãn cơ tĩnh',
+      );
+      await tester.enterText(find.byKey(const Key('exercise_sets_field')), '3');
+      await tester.enterText(
+        find.byKey(const Key('exercise_quantity_field')),
+        '45',
+      );
+      await tester.enterText(
+        find.byKey(const Key('exercise_calories_field')),
+        '0',
+      );
+
+      await tester.tap(find.byKey(const Key('save_exercise_button')));
+      await tester.pumpAndSettle();
+
+      // Dialog đã đóng và bài tập mới hiển thị đúng định dạng '3 hiệp × 45 giây'
+      expect(find.text('Thêm bài tập mới'), findsNothing);
+      expect(provider.exercises.length, initialCount + 1);
+      expect(find.text('Giãn cơ tĩnh'), findsOneWidget);
+      expect(find.textContaining('3 hiệp × 45 giây'), findsOneWidget);
+
+      // Mở màn hình chi tiết kiểm tra hiển thị khối lượng
+      await tester.tap(find.text('Giãn cơ tĩnh'));
+      await tester.pumpAndSettle();
+      expect(find.text('🔁 Khối lượng: 3 hiệp × 45 giây'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Tab Thống kê & BMI: cảnh báo khi dữ liệu lưu không hợp lệ, chặn nhập sai mà không tự đổi về 68/172, hỗ trợ dấu phẩy thập phân',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({
+        'isLoggedIn': true,
+        'weight': 0.0,
+        'height': -170.0,
+      });
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await provider.loadData();
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const FitPlanApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Thống kê & BMI'));
+      await tester.pumpAndSettle();
+
+      // Hiển thị thông báo yêu cầu cập nhật lại thay vì hiển thị BMI vô nghĩa
+      expect(
+        find.textContaining(
+          'Dữ liệu cân nặng hoặc chiều cao đang lưu không hợp lệ',
+        ),
+        findsOneWidget,
+      );
+
+      // Nhập giá trị không hợp lệ (dấu phân tách hàng nghìn và số âm)
+      await tester.enterText(
+        find.byKey(const Key('weight_input_field')),
+        '1,000.5',
+      );
+      await tester.enterText(
+        find.byKey(const Key('height_input_field')),
+        '-170',
+      );
+
+      await tester.tap(find.byKey(const Key('update_bmi_button')));
+      await tester.pumpAndSettle();
+
+      // Báo lỗi tiếng Việt dưới ô nhập, giữ nguyên text đã nhập và không tự đổi về 68/172
+      expect(
+        find.textContaining('Cân nặng phải là số hợp lệ > 0'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Chiều cao phải là số hợp lệ > 0'),
+        findsOneWidget,
+      );
+      expect(find.text('1,000.5'), findsOneWidget);
+      expect(find.text('-170'), findsOneWidget);
+      expect(provider.hasValidBodyMetrics, isFalse);
+
+      // Nhập số thập phân dùng dấu phẩy hợp lệ
+      await tester.enterText(
+        find.byKey(const Key('weight_input_field')),
+        '67,5',
+      );
+      await tester.enterText(
+        find.byKey(const Key('height_input_field')),
+        '172,5',
+      );
+
+      await tester.tap(find.byKey(const Key('update_bmi_button')));
+      await tester.pumpAndSettle();
+
+      expect(provider.hasValidBodyMetrics, isTrue);
+      expect(provider.weight, closeTo(67.5, 1e-6));
+      expect(provider.height, closeTo(172.5, 1e-6));
+      expect(find.text('22.7'), findsOneWidget);
+      expect(find.text('Đã cập nhật chỉ số BMI!'), findsOneWidget);
+    },
+  );
 }

@@ -2,14 +2,49 @@ import '../helpers/date_utils_helper.dart';
 
 // =============================================
 // MODEL BÀI TẬP & LỊCH TẬP (PHIÊN BẢN 3)
-// Hỗ trợ lịch 1 lần, lặp hằng tuần, lịch sử phiên bản lịch,
-// tương thích ngược JSON cũ (exercises_v2), API và SQLite.
+// Hỗ trợ đơn vị bài tập (lần, giây, phút), lịch 1 lần,
+// lặp hằng tuần, lịch sử phiên bản lịch, tương thích ngược
+// JSON cũ (exercises_v2), API và SQLite.
 // =============================================
 
 class ScheduleTypes {
   static const String once = 'once';
   static const String weekly = 'weekly';
   static const String unrecognized = 'unrecognized';
+}
+
+/// Các đơn vị bài tập được hỗ trợ
+class ExerciseUnits {
+  static const String reps = 'lần';
+  static const String seconds = 'giây';
+  static const String minutes = 'phút';
+
+  static const String defaultUnit = reps;
+
+  static const List<String> values = <String>[reps, seconds, minutes];
+
+  static bool isValidUnit(String? unit) {
+    return unit != null && values.contains(unit);
+  }
+
+  /// Nhãn ô nhập số lượng mỗi hiệp tương ứng với đơn vị đang chọn
+  static String quantityInputLabel(String unit) {
+    switch (unit) {
+      case seconds:
+        return 'Số giây mỗi hiệp';
+      case minutes:
+        return 'Số phút mỗi hiệp';
+      case reps:
+      default:
+        return 'Số lần mỗi hiệp';
+    }
+  }
+
+  /// Định dạng hiển thị nhất quán: "3 hiệp × 10 lần", "3 hiệp × 60 giây", "1 hiệp × 20 phút"
+  static String formatVolume(int sets, int repsPerSet, String unit) {
+    final safeUnit = isValidUnit(unit) ? unit : defaultUnit;
+    return '$sets hiệp × $repsPerSet $safeUnit';
+  }
 }
 
 /// Lưu một giai đoạn lịch trong quá khứ [effectiveFrom .. effectiveTo]
@@ -111,8 +146,9 @@ class Exercise {
   final String title;
   final String category; // 'Tăng cơ', 'Cardio', 'Thể lực'
   final int sets;
-  final int reps;
-  final int calories; // Kcal ước tính
+  final int reps; // Số lượng mỗi hiệp (lần, giây hoặc phút)
+  final String unit; // 'lần' | 'giây' | 'phút'
+  final int calories; // Kcal ước tính cho toàn bài tập
   final String dayOfWeek; // Nhãn lịch hiển thị hoặc nhãn gốc cũ
   final String notes;
   final String imagePath;
@@ -137,6 +173,7 @@ class Exercise {
     required this.category,
     required this.sets,
     required this.reps,
+    this.unit = ExerciseUnits.defaultUnit,
     required this.calories,
     required this.dayOfWeek,
     this.notes = 'Khởi động kỹ 5 phút trước khi tập, hít thở đều.',
@@ -168,6 +205,14 @@ class Exercise {
        scheduleHistory = List.unmodifiable(
          scheduleHistory ?? const <SchedulePeriod>[],
        ) {
+    _validateExerciseFields(
+      id: id,
+      title: title,
+      sets: sets,
+      reps: reps,
+      unit: unit,
+      calories: calories,
+    );
     _validateScheduleIntegrity(
       scheduleType: this.scheduleType,
       scheduledDate: scheduledDate,
@@ -178,6 +223,38 @@ class Exercise {
       needsScheduleReview: needsScheduleReview,
       scheduleHistory: this.scheduleHistory,
     );
+  }
+
+  static void _validateExerciseFields({
+    required String id,
+    required String title,
+    required int sets,
+    required int reps,
+    required String unit,
+    required int calories,
+  }) {
+    if (id.trim().isEmpty) {
+      throw const FormatException('ID bài tập không được để trống.');
+    }
+    if (title.trim().isEmpty) {
+      throw const FormatException('Tên bài tập không được để trống.');
+    }
+    if (sets <= 0) {
+      throw const FormatException('Số hiệp phải là số nguyên lớn hơn 0.');
+    }
+    if (reps <= 0) {
+      throw const FormatException(
+        'Số lượng mỗi hiệp phải là số nguyên lớn hơn 0.',
+      );
+    }
+    if (!ExerciseUnits.isValidUnit(unit)) {
+      throw FormatException('Đơn vị bài tập không hợp lệ: $unit');
+    }
+    if (calories < 0) {
+      throw const FormatException(
+        'Calo ước tính phải là số nguyên lớn hơn hoặc bằng 0.',
+      );
+    }
   }
 
   static void _validateScheduleIntegrity({
@@ -229,6 +306,9 @@ class Exercise {
     }
   }
 
+  /// Chuỗi hiển thị khối lượng tập nhất quán (vd: "3 hiệp × 10 lần", "3 hiệp × 60 giây")
+  String get volumeLabel => ExerciseUnits.formatVolume(sets, reps, unit);
+
   /// Kiểm tra bài tập có được lên lịch vào ngày địa phương [date] hay không
   bool isScheduledOn(DateTime date) {
     final localDate = DateUtilsHelper.normalizeLocalDate(date);
@@ -241,7 +321,7 @@ class Exercise {
     final dt = localDate ?? DateUtilsHelper.tryParseDateKey(dateKey);
     if (dt == null) return false;
 
-    // 1. Nếu ngày nằm trong phạmvi của một giai đoạn lịch quá khứ
+    // 1. Nếu ngày nằm trong phạm vi của một giai đoạn lịch quá khứ
     for (final period in scheduleHistory) {
       if (dateKey.compareTo(period.effectiveFrom) >= 0 &&
           dateKey.compareTo(period.effectiveTo) <= 0) {
@@ -302,6 +382,7 @@ class Exercise {
     required String newCategory,
     required int newSets,
     required int newReps,
+    String? newUnit,
     required int newCalories,
     required String newNotes,
     required String newScheduleType,
@@ -328,10 +409,11 @@ class Exercise {
 
     return Exercise(
       id: id,
-      title: newTitle,
+      title: newTitle.trim(),
       category: newCategory,
       sets: newSets,
       reps: newReps,
+      unit: newUnit ?? unit,
       calories: newCalories,
       dayOfWeek: computedDayOfWeek,
       notes: newNotes,
@@ -419,6 +501,7 @@ class Exercise {
 
   /// Chuyển đổi một bản ghi bài tập từ JSON cũ (exercises_v2) sang Exercise v3
   /// với ngày cố định [migrationDate] ('yyyy-MM-dd').
+  /// Mặc định đơn vị là 'lần' khi dữ liệu cũ chưa có trường unit (không suy đoán theo tên bài).
   factory Exercise.migrateFromLegacyJson(
     Map<String, dynamic> json, {
     required String migrationDate,
@@ -449,6 +532,8 @@ class Exercise {
       );
     }
 
+    final String parsedUnit = _parseOrDefaultUnit(json['unit']);
+
     final rawDayOfWeek = json['dayOfWeek']?.toString() ?? 'Hôm nay';
     final bool wasCompleted =
         json['isCompleted'] == true || json['isCompleted'] == 1;
@@ -464,6 +549,7 @@ class Exercise {
       category: json['category']?.toString() ?? 'Tăng cơ',
       sets: rawSets,
       reps: rawReps,
+      unit: parsedUnit,
       calories: rawCalories,
       dayOfWeek: rawDayOfWeek,
       notes: json['notes']?.toString() ?? 'Khởi động kỹ 5 phút trước khi tập.',
@@ -480,6 +566,15 @@ class Exercise {
       legacyCompletedWithoutDate: wasCompleted,
       scheduleHistory: const [],
     );
+  }
+
+  static String _parseOrDefaultUnit(dynamic rawUnit) {
+    if (rawUnit == null) return ExerciseUnits.defaultUnit;
+    final unitStr = rawUnit.toString().trim();
+    if (!ExerciseUnits.isValidUnit(unitStr)) {
+      throw FormatException('Đơn vị bài tập trong JSON không hợp lệ: $rawUnit');
+    }
+    return unitStr;
   }
 
   static ({
@@ -592,6 +687,7 @@ class Exercise {
     'category': category,
     'sets': sets,
     'reps': reps,
+    'unit': unit,
     'calories': calories,
     'dayOfWeek': dayOfWeek,
     'notes': notes,
@@ -610,7 +706,7 @@ class Exercise {
     'scheduleHistory': scheduleHistory.map((p) => p.toJson()).toList(),
   };
 
-  /// Đọc Exercise từ JSON (hỗ trợ cả JSON Store v3 và JSON cũ)
+  /// Đọc Exercise từ JSON (hỗ trợ cả JSON Store v3 và JSON cũ thiếu trường unit)
   factory Exercise.fromJson(
     Map<String, dynamic> json, {
     String? fallbackDateKey,
@@ -646,6 +742,8 @@ class Exercise {
         'Exercise JSON có thông số sets/reps/calories không hợp lệ.',
       );
     }
+
+    final String parsedUnit = _parseOrDefaultUnit(json['unit']);
 
     final rawScheduleType = json['scheduleType']?.toString() ?? '';
     final rawStartDate = json['startDate']?.toString() ?? '';
@@ -688,6 +786,7 @@ class Exercise {
       category: json['category']?.toString() ?? 'Tăng cơ',
       sets: sets,
       reps: reps,
+      unit: parsedUnit,
       calories: calories,
       dayOfWeek: json['dayOfWeek']?.toString() ?? 'Hôm nay',
       notes: json['notes']?.toString() ?? 'Khởi động kỹ 5 phút trước khi tập.',
@@ -729,6 +828,7 @@ class Exercise {
     category: map['category'] ?? 'Tăng cơ',
     sets: map['sets'] ?? 3,
     reps: map['reps'] ?? 12,
+    unit: _parseOrDefaultUnit(map['unit']),
     calories: map['calories'] ?? 100,
     dayOfWeek: map['dayOfWeek'] ?? 'Hôm nay',
     notes: map['notes'] ?? 'Khởi động kỹ 5 phút trước khi tập.',
@@ -745,6 +845,7 @@ class Exercise {
     String? category,
     int? sets,
     int? reps,
+    String? unit,
     int? calories,
     String? dayOfWeek,
     String? notes,
@@ -770,6 +871,7 @@ class Exercise {
       category: category ?? this.category,
       sets: sets ?? this.sets,
       reps: reps ?? this.reps,
+      unit: unit ?? this.unit,
       calories: calories ?? this.calories,
       dayOfWeek: dayOfWeek ?? this.dayOfWeek,
       notes: notes ?? this.notes,

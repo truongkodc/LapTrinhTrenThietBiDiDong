@@ -37,6 +37,13 @@ class DayWorkoutItem {
 
   int get displayReps => completion?.repsSnapshot ?? exercise?.reps ?? 1;
 
+  String get displayUnit =>
+      completion?.unitSnapshot ?? exercise?.unit ?? ExerciseUnits.defaultUnit;
+
+  /// Chuỗi khối lượng hiển thị nhất quán (vd: "3 hiệp × 60 giây")
+  String get displayVolumeLabel =>
+      ExerciseUnits.formatVolume(displaySets, displayReps, displayUnit);
+
   int get displayCalories =>
       completion?.caloriesSnapshot ?? exercise?.calories ?? 0;
 
@@ -61,6 +68,7 @@ class DayWorkoutItem {
         category: displayCategory,
         sets: displaySets,
         reps: displayReps,
+        unit: displayUnit,
         calories: displayCalories,
         dayOfWeek: displayScheduleLabel,
         notes: displayNotes,

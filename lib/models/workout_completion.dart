@@ -1,4 +1,5 @@
 import '../helpers/date_utils_helper.dart';
+import 'exercise.dart';
 
 // =============================================
 // BẢN GHI HOÀN THÀNH BÀI TẬP THEO NGÀY (SNAPSHOT)
@@ -13,11 +14,13 @@ class WorkoutCompletion {
   final String categorySnapshot;
   final int setsSnapshot;
   final int repsSnapshot;
+  final String
+  unitSnapshot; // Đơn vị tại thời điểm hoàn thành ('lần' | 'giây' | 'phút')
   final int caloriesSnapshot; // Kcal ước tính tại thời điểm hoàn thành
   final String notesSnapshot;
   final String scheduleLabelSnapshot;
 
-  const WorkoutCompletion({
+  WorkoutCompletion({
     required this.exerciseId,
     required this.dateKey,
     required this.completedAt,
@@ -25,13 +28,24 @@ class WorkoutCompletion {
     required this.categorySnapshot,
     required this.setsSnapshot,
     required this.repsSnapshot,
+    this.unitSnapshot = ExerciseUnits.defaultUnit,
     required this.caloriesSnapshot,
     required this.notesSnapshot,
     required this.scheduleLabelSnapshot,
-  });
+  }) {
+    if (!ExerciseUnits.isValidUnit(unitSnapshot)) {
+      throw FormatException(
+        'Đơn vị trong bản ghi hoàn thành không hợp lệ: $unitSnapshot',
+      );
+    }
+  }
 
   /// Khóa định danh duy nhất cho cặp bài tập + ngày tập
   String get recordKey => '${exerciseId}__$dateKey';
+
+  /// Chuỗi khối lượng từ snapshot (vd: "3 hiệp × 60 giây")
+  String get volumeSnapshotLabel =>
+      ExerciseUnits.formatVolume(setsSnapshot, repsSnapshot, unitSnapshot);
 
   Map<String, dynamic> toJson() => {
     'exerciseId': exerciseId,
@@ -41,6 +55,7 @@ class WorkoutCompletion {
     'categorySnapshot': categorySnapshot,
     'setsSnapshot': setsSnapshot,
     'repsSnapshot': repsSnapshot,
+    'unitSnapshot': unitSnapshot,
     'caloriesSnapshot': caloriesSnapshot,
     'notesSnapshot': notesSnapshot,
     'scheduleLabelSnapshot': scheduleLabelSnapshot,
@@ -69,6 +84,16 @@ class WorkoutCompletion {
       );
     }
 
+    final rawUnit = json['unitSnapshot'];
+    final String parsedUnit = rawUnit == null
+        ? ExerciseUnits.defaultUnit
+        : rawUnit.toString().trim();
+    if (!ExerciseUnits.isValidUnit(parsedUnit)) {
+      throw FormatException(
+        'unitSnapshot trong bản ghi hoàn thành không hợp lệ: $rawUnit',
+      );
+    }
+
     final title = json['titleSnapshot']?.toString().trim() ?? '';
     if (title.isEmpty) {
       throw const FormatException(
@@ -84,6 +109,7 @@ class WorkoutCompletion {
       categorySnapshot: json['categorySnapshot']?.toString() ?? 'Tăng cơ',
       setsSnapshot: sets,
       repsSnapshot: reps,
+      unitSnapshot: parsedUnit,
       caloriesSnapshot: calories,
       notesSnapshot: json['notesSnapshot']?.toString() ?? '',
       scheduleLabelSnapshot: json['scheduleLabelSnapshot']?.toString() ?? '',

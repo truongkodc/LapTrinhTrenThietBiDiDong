@@ -62,6 +62,7 @@ class WorkoutPlanTab extends StatelessWidget {
     );
 
     String selectedCategory = existing?.category ?? 'Tăng cơ';
+    String selectedUnit = existing?.unit ?? ExerciseUnits.defaultUnit;
     String scheduleType =
         (existing != null && existing.scheduleType == ScheduleTypes.once)
         ? ScheduleTypes.once
@@ -85,6 +86,7 @@ class WorkoutPlanTab extends StatelessWidget {
         : provider.selectedDateKey;
 
     String? scheduleValidationError;
+    bool isSubmitting = false;
 
     showDialog(
       context: context,
@@ -119,9 +121,11 @@ class WorkoutPlanTab extends StatelessWidget {
                     ),
                   ],
                   TextFormField(
+                    key: const Key('exercise_title_field'),
                     controller: titleCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Tên bài tập *',
+                      errorMaxLines: 2,
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty)
                         ? 'Vui lòng nhập tên bài tập'
@@ -136,46 +140,77 @@ class WorkoutPlanTab extends StatelessWidget {
                     items: ['Tăng cơ', 'Cardio', 'Thể lực']
                         .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                         .toList(),
-                    onChanged: (val) =>
-                        setDialogState(() => selectedCategory = val!),
+                    onChanged: isSubmitting
+                        ? null
+                        : (val) =>
+                              setDialogState(() => selectedCategory = val!),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    key: const Key('exercise_unit_dropdown'),
+                    initialValue: selectedUnit,
+                    decoration: const InputDecoration(
+                      labelText: 'Đơn vị mỗi hiệp',
+                    ),
+                    items: ExerciseUnits.values
+                        .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                        .toList(),
+                    onChanged: isSubmitting
+                        ? null
+                        : (val) => setDialogState(() => selectedUnit = val!),
                   ),
                   const SizedBox(height: 12),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: TextFormField(
+                          key: const Key('exercise_sets_field'),
                           controller: setsCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Số hiệp (Sets)',
+                            labelText: 'Số hiệp',
+                            errorMaxLines: 3,
                           ),
                           validator: (v) =>
-                              (int.tryParse(v ?? '') ?? 0) <= 0 ? '> 0' : null,
+                              WorkoutProvider.tryParsePositiveInt(v) == null
+                              ? 'Số hiệp phải là số nguyên dương (> 0)'
+                              : null,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextFormField(
+                          key: const Key('exercise_quantity_field'),
                           controller: repsCtrl,
                           keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Số lần (Reps)',
+                          decoration: InputDecoration(
+                            labelText: ExerciseUnits.quantityInputLabel(
+                              selectedUnit,
+                            ),
+                            errorMaxLines: 3,
                           ),
                           validator: (v) =>
-                              (int.tryParse(v ?? '') ?? 0) <= 0 ? '> 0' : null,
+                              WorkoutProvider.tryParsePositiveInt(v) == null
+                              ? '${ExerciseUnits.quantityInputLabel(selectedUnit)} phải là số nguyên dương (> 0)'
+                              : null,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
+                    key: const Key('exercise_calories_field'),
                     controller: calCtrl,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
                       labelText: 'Calo ước tính (kcal)',
+                      errorMaxLines: 2,
                     ),
                     validator: (v) =>
-                        (int.tryParse(v ?? '') ?? -1) < 0 ? '>= 0' : null,
+                        WorkoutProvider.tryParseNonNegativeInt(v) == null
+                        ? 'Kcal phải là số nguyên từ 0 trở lên'
+                        : null,
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
@@ -193,36 +228,42 @@ class WorkoutPlanTab extends StatelessWidget {
                         child: Text('Lặp hằng tuần theo thứ'),
                       ),
                     ],
-                    onChanged: (val) {
-                      setDialogState(() {
-                        scheduleType = val!;
-                        scheduleValidationError = null;
-                      });
-                    },
+                    onChanged: isSubmitting
+                        ? null
+                        : (val) {
+                            setDialogState(() {
+                              scheduleType = val!;
+                              scheduleValidationError = null;
+                            });
+                          },
                   ),
                   const SizedBox(height: 12),
                   if (scheduleType == ScheduleTypes.once) ...[
                     OutlinedButton.icon(
                       key: const Key('pick_once_date_button'),
-                      onPressed: () async {
-                        final initial =
-                            DateUtilsHelper.tryParseDateKey(scheduledDateKey) ??
-                            provider.selectedDate;
-                        final picked = await showDatePicker(
-                          context: ctx,
-                          initialDate: initial,
-                          firstDate: DateTime(2020, 1, 1),
-                          lastDate: DateTime(2035, 12, 31),
-                        );
-                        if (picked != null) {
-                          setDialogState(() {
-                            scheduledDateKey = DateUtilsHelper.toDateKey(
-                              picked,
-                            );
-                            scheduleValidationError = null;
-                          });
-                        }
-                      },
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final initial =
+                                  DateUtilsHelper.tryParseDateKey(
+                                    scheduledDateKey,
+                                  ) ??
+                                  provider.selectedDate;
+                              final picked = await showDatePicker(
+                                context: ctx,
+                                initialDate: initial,
+                                firstDate: DateTime(2020, 1, 1),
+                                lastDate: DateTime(2035, 12, 31),
+                              );
+                              if (picked != null) {
+                                setDialogState(() {
+                                  scheduledDateKey = DateUtilsHelper.toDateKey(
+                                    picked,
+                                  );
+                                  scheduleValidationError = null;
+                                });
+                              }
+                            },
                       icon: const Icon(Icons.event),
                       label: Text(
                         'Ngày tập: ${DateUtilsHelper.formatDisplayDateKey(scheduledDateKey)}',
@@ -237,12 +278,14 @@ class WorkoutPlanTab extends StatelessWidget {
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                         TextButton(
-                          onPressed: () {
-                            setDialogState(() {
-                              repeatDays = [1, 2, 3, 4, 5, 6, 7];
-                              scheduleValidationError = null;
-                            });
-                          },
+                          onPressed: isSubmitting
+                              ? null
+                              : () {
+                                  setDialogState(() {
+                                    repeatDays = [1, 2, 3, 4, 5, 6, 7];
+                                    scheduleValidationError = null;
+                                  });
+                                },
                           child: const Text('Mỗi ngày'),
                         ),
                       ],
@@ -259,40 +302,48 @@ class WorkoutPlanTab extends StatelessWidget {
                             DateUtilsHelper.weekdayShortLabel(weekday),
                           ),
                           selected: isSelected,
-                          onSelected: (selected) {
-                            setDialogState(() {
-                              if (selected) {
-                                repeatDays.add(weekday);
-                                repeatDays.sort();
-                              } else {
-                                repeatDays.remove(weekday);
-                              }
-                              scheduleValidationError = null;
-                            });
-                          },
+                          onSelected: isSubmitting
+                              ? null
+                              : (selected) {
+                                  setDialogState(() {
+                                    if (selected) {
+                                      repeatDays.add(weekday);
+                                      repeatDays.sort();
+                                    } else {
+                                      repeatDays.remove(weekday);
+                                    }
+                                    scheduleValidationError = null;
+                                  });
+                                },
                         );
                       }),
                     ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
                       key: const Key('pick_start_date_button'),
-                      onPressed: () async {
-                        final initial =
-                            DateUtilsHelper.tryParseDateKey(startDateKey) ??
-                            provider.selectedDate;
-                        final picked = await showDatePicker(
-                          context: ctx,
-                          initialDate: initial,
-                          firstDate: DateTime(2020, 1, 1),
-                          lastDate: DateTime(2035, 12, 31),
-                        );
-                        if (picked != null) {
-                          setDialogState(() {
-                            startDateKey = DateUtilsHelper.toDateKey(picked);
-                            scheduleValidationError = null;
-                          });
-                        }
-                      },
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final initial =
+                                  DateUtilsHelper.tryParseDateKey(
+                                    startDateKey,
+                                  ) ??
+                                  provider.selectedDate;
+                              final picked = await showDatePicker(
+                                context: ctx,
+                                initialDate: initial,
+                                firstDate: DateTime(2020, 1, 1),
+                                lastDate: DateTime(2035, 12, 31),
+                              );
+                              if (picked != null) {
+                                setDialogState(() {
+                                  startDateKey = DateUtilsHelper.toDateKey(
+                                    picked,
+                                  );
+                                  scheduleValidationError = null;
+                                });
+                              }
+                            },
                       icon: const Icon(Icons.calendar_month),
                       label: Text(
                         'Ngày bắt đầu: ${DateUtilsHelper.formatDisplayDateKey(startDateKey)}',
@@ -320,100 +371,166 @@ class WorkoutPlanTab extends StatelessWidget {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
+              onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
               child: const Text('Hủy'),
             ),
             ElevatedButton(
-              onPressed: () async {
-                if (!formKey.currentState!.validate()) return;
+              key: const Key('save_exercise_button'),
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      final isFormValid = formKey.currentState!.validate();
+                      String? nextScheduleError;
 
-                if (scheduleType == ScheduleTypes.weekly &&
-                    repeatDays.isEmpty) {
-                  setDialogState(() {
-                    scheduleValidationError =
-                        'Vui lòng chọn ít nhất một thứ trong tuần.';
-                  });
-                  return;
-                }
+                      if (scheduleType == ScheduleTypes.once) {
+                        if (DateUtilsHelper.tryParseDateKey(scheduledDateKey) ==
+                            null) {
+                          nextScheduleError = 'Vui lòng chọn ngày tập hợp lệ.';
+                        } else if (isEditing &&
+                            scheduledDateKey.compareTo(provider.todayDateKey) <
+                                0) {
+                          nextScheduleError =
+                              'Khi cập nhật lịch, ngày tập một lần phải từ hôm nay (${DateUtilsHelper.formatDisplayDateKey(provider.todayDateKey)}) trở đi.';
+                        }
+                      } else if (scheduleType == ScheduleTypes.weekly) {
+                        if (repeatDays.isEmpty) {
+                          nextScheduleError =
+                              'Vui lòng chọn ít nhất một thứ trong tuần.';
+                        } else if (DateUtilsHelper.tryParseDateKey(
+                              startDateKey,
+                            ) ==
+                            null) {
+                          nextScheduleError =
+                              'Vui lòng chọn ngày bắt đầu hợp lệ.';
+                        }
+                      } else {
+                        nextScheduleError = 'Kiểu lịch tập không hợp lệ.';
+                      }
 
-                if (isEditing &&
-                    scheduleType == ScheduleTypes.once &&
-                    scheduledDateKey.compareTo(provider.todayDateKey) < 0) {
-                  setDialogState(() {
-                    scheduleValidationError =
-                        'Khi cập nhật lịch, ngày tập một lần phải từ hôm nay (${DateUtilsHelper.formatDisplayDateKey(provider.todayDateKey)}) trở đi.';
-                  });
-                  return;
-                }
+                      if (nextScheduleError != scheduleValidationError) {
+                        setDialogState(() {
+                          scheduleValidationError = nextScheduleError;
+                        });
+                      }
 
-                final String resolvedStart = scheduleType == ScheduleTypes.once
-                    ? scheduledDateKey
-                    : startDateKey;
-                final String dayOfWeekLabel = scheduleType == ScheduleTypes.once
-                    ? 'Ngày ${DateUtilsHelper.formatDisplayDateKey(scheduledDateKey)}'
-                    : DateUtilsHelper.formatRepeatDays(repeatDays);
+                      if (!isFormValid || nextScheduleError != null) {
+                        return;
+                      }
 
-                final exerciseObj = Exercise(
-                  id: isEditing
-                      ? existing.id
-                      : DateTime.now().microsecondsSinceEpoch.toString(),
-                  title: titleCtrl.text.trim(),
-                  category: selectedCategory,
-                  sets: int.tryParse(setsCtrl.text) ?? 3,
-                  reps: int.tryParse(repsCtrl.text) ?? 10,
-                  calories: int.tryParse(calCtrl.text) ?? 100,
-                  dayOfWeek: dayOfWeekLabel,
-                  notes: notesCtrl.text.trim(),
-                  imagePath: isEditing ? existing.imagePath : '',
-                  isCompleted: false,
-                  createdAt: isEditing ? existing.createdAt : null,
-                  scheduleType: scheduleType,
-                  scheduledDate: scheduleType == ScheduleTypes.once
-                      ? scheduledDateKey
-                      : null,
-                  repeatDays: scheduleType == ScheduleTypes.weekly
-                      ? repeatDays
-                      : const [],
-                  startDate: resolvedStart,
-                  effectiveFrom: resolvedStart,
-                  legacyCompletedWithoutDate: isEditing
-                      ? existing.legacyCompletedWithoutDate
-                      : false,
-                  scheduleHistory: isEditing
-                      ? existing.scheduleHistory
-                      : const [],
-                );
+                      final parsedSets = WorkoutProvider.tryParsePositiveInt(
+                        setsCtrl.text,
+                      );
+                      final parsedReps = WorkoutProvider.tryParsePositiveInt(
+                        repsCtrl.text,
+                      );
+                      final parsedCalories =
+                          WorkoutProvider.tryParseNonNegativeInt(calCtrl.text);
 
-                final bool success = isEditing
-                    ? await provider.updateExercise(exerciseObj)
-                    : await provider.addExercise(exerciseObj);
+                      if (parsedSets == null ||
+                          parsedReps == null ||
+                          parsedCalories == null ||
+                          !ExerciseUnits.isValidUnit(selectedUnit)) {
+                        return;
+                      }
 
-                if (!ctx.mounted) return;
-                if (success) {
-                  Navigator.of(ctx).pop();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          isEditing
-                              ? 'Đã cập nhật "${exerciseObj.title}" (hiệu lực từ hôm nay)!'
-                              : 'Đã thêm "${exerciseObj.title}" vào lịch tập!',
-                        ),
-                      ),
-                    );
-                  }
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        provider.lastErrorMessage ??
-                            'Không thể lưu dữ liệu. Vui lòng thử lại.',
-                      ),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
+                      final String resolvedStart =
+                          scheduleType == ScheduleTypes.once
+                          ? scheduledDateKey
+                          : startDateKey;
+                      final String dayOfWeekLabel =
+                          scheduleType == ScheduleTypes.once
+                          ? 'Ngày ${DateUtilsHelper.formatDisplayDateKey(scheduledDateKey)}'
+                          : DateUtilsHelper.formatRepeatDays(repeatDays);
+
+                      setDialogState(() {
+                        isSubmitting = true;
+                      });
+
+                      try {
+                        final exerciseObj = Exercise(
+                          id: isEditing
+                              ? existing.id
+                              : DateTime.now().microsecondsSinceEpoch
+                                    .toString(),
+                          title: titleCtrl.text.trim(),
+                          category: selectedCategory,
+                          sets: parsedSets,
+                          reps: parsedReps,
+                          unit: selectedUnit,
+                          calories: parsedCalories,
+                          dayOfWeek: dayOfWeekLabel,
+                          notes: notesCtrl.text.trim(),
+                          imagePath: isEditing ? existing.imagePath : '',
+                          isCompleted: false,
+                          createdAt: isEditing ? existing.createdAt : null,
+                          scheduleType: scheduleType,
+                          scheduledDate: scheduleType == ScheduleTypes.once
+                              ? scheduledDateKey
+                              : null,
+                          repeatDays: scheduleType == ScheduleTypes.weekly
+                              ? repeatDays
+                              : const [],
+                          startDate: resolvedStart,
+                          effectiveFrom: resolvedStart,
+                          legacyCompletedWithoutDate: isEditing
+                              ? existing.legacyCompletedWithoutDate
+                              : false,
+                          scheduleHistory: isEditing
+                              ? existing.scheduleHistory
+                              : const [],
+                        );
+
+                        final bool success = isEditing
+                            ? await provider.updateExercise(exerciseObj)
+                            : await provider.addExercise(exerciseObj);
+
+                        if (!ctx.mounted) return;
+                        if (success) {
+                          Navigator.of(ctx).pop();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  isEditing
+                                      ? 'Đã cập nhật "${exerciseObj.title}" (hiệu lực từ hôm nay)!'
+                                      : 'Đã thêm "${exerciseObj.title}" vào lịch tập!',
+                                ),
+                              ),
+                            );
+                          }
+                        } else {
+                          setDialogState(() {
+                            isSubmitting = false;
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                provider.lastErrorMessage ??
+                                    'Không thể lưu dữ liệu. Vui lòng thử lại.',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          setDialogState(() {
+                            isSubmitting = false;
+                          });
+                        }
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                provider.lastErrorMessage ??
+                                    'Dữ liệu không hợp lệ hoặc không thể lưu.',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
               child: Text(isEditing ? 'Cập nhật' : 'Lưu bài tập'),
             ),
           ],
@@ -864,7 +981,7 @@ class WorkoutPlanTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${item.displayCategory} • ${item.displaySets} hiệp x ${item.displayReps} lần • ~${item.displayCalories} kcal (ước tính)\n📅 ${item.displayScheduleLabel}',
+                  '${item.displayCategory} • ${item.displayVolumeLabel} • ~${item.displayCalories} kcal (ước tính)\n📅 ${item.displayScheduleLabel}',
                 ),
                 if (item.legacyCompletedWithoutDate)
                   const Padding(

@@ -75,7 +75,7 @@ class ExerciseDetailScreen extends StatelessWidget {
             ],
             const SizedBox(height: 8),
             Text(
-              '🔁 Khối lượng: ${exercise.sets} hiệp x ${exercise.reps} lần',
+              '🔁 Khối lượng: ${exercise.volumeLabel}',
               style: const TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 8),

@@ -73,8 +73,8 @@ class _DeletedExerciseSnapshot {
 
 // ==================================================
 // 2. STATE MANAGEMENT VỚI PROVIDER (BÀI 7)
-// Quản lý lịch tập theo ngày, lịch sử hoàn thành độc lập,
-// chuyển đổi dữ liệu cũ (migration) và hàng đợi lưu tuần tự.
+// Quản lý lịch tập theo ngày, đơn vị bài tập, kiểm tra dữ liệu,
+// lịch sử hoàn thành độc lập, migration và hàng đợi lưu tuần tự.
 // ==================================================
 class WorkoutProvider extends ChangeNotifier {
   static const String storeKeyV3 = 'fitplan_workout_store_v3';
@@ -82,6 +82,9 @@ class WorkoutProvider extends ChangeNotifier {
   static const String legacyBackupKey = 'exercises_v2_backup';
   static const String migrationDateLockKey = 'fitplan_migration_date_v3';
   static const int currentSchemaVersion = 3;
+
+  static final RegExp _positiveIntRegex = RegExp(r'^\d+$');
+  static final RegExp _decimalMetricRegex = RegExp(r'^\d+([.,]\d+)?$');
 
   final DateTime Function() _clock;
   final WorkoutStorageAdapter _storage;
@@ -111,12 +114,77 @@ class WorkoutProvider extends ChangeNotifier {
     _selectedDate = DateUtilsHelper.normalizeLocalDate(_clock());
   }
 
-  // ---- Getters thông tin chung ----
+  // ---- Tiện ích kiểm tra dữ liệu nhập ----
+
+  /// Phân tích số nguyên dương (> 0) từ chuỗi nhập. Trả về null nếu không hợp lệ.
+  static int? tryParsePositiveInt(String? raw) {
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    if (!_positiveIntRegex.hasMatch(trimmed)) return null;
+    final val = int.tryParse(trimmed);
+    if (val == null || val <= 0) return null;
+    return val;
+  }
+
+  /// Phân tích số nguyên không âm (>= 0) từ chuỗi nhập. Trả về null nếu không hợp lệ.
+  static int? tryParseNonNegativeInt(String? raw) {
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    if (!_positiveIntRegex.hasMatch(trimmed)) return null;
+    final val = int.tryParse(trimmed);
+    if (val == null || val < 0) return null;
+    return val;
+  }
+
+  /// Phân tích cân nặng / chiều cao: hỗ trợ dấu chấm hoặc dấu phẩy (vd: 67.5 hoặc 67,5),
+  /// không hỗ trợ dấu phân cách hàng nghìn, từ chối rỗng, chữ, <= 0, NaN, Infinity.
+  static double? tryParseBodyMetric(String? raw) {
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    if (!_decimalMetricRegex.hasMatch(trimmed)) return null;
+
+    final normalized = trimmed.replaceAll(',', '.');
+    final parsed = double.tryParse(normalized);
+    if (!isValidBodyMetricValue(parsed)) return null;
+    return parsed;
+  }
+
+  /// Kiểm tra một số thực có phải là chỉ số cơ thể hợp lệ (hữu hạn và > 0)
+  static bool isValidBodyMetricValue(double? value) {
+    return value != null && !value.isNaN && value.isFinite && value > 0;
+  }
+
+  /// Tính BMI = kg / (cm / 100)^2 và kiểm tra kết quả hữu hạn > 0.
+  /// Trả về null nếu đầu vào hoặc kết quả không hợp lệ.
+  static double? calculateValidBmi(double? weightKg, double? heightCm) {
+    if (!isValidBodyMetricValue(weightKg) ||
+        !isValidBodyMetricValue(heightCm)) {
+      return null;
+    }
+    final heightM = heightCm! / 100.0;
+    if (!heightM.isFinite || heightM <= 0) return null;
+    final denom = heightM * heightM;
+    if (!denom.isFinite || denom <= 0) return null;
+    final result = weightKg! / denom;
+    if (result.isNaN || !result.isFinite || result <= 0) return null;
+    return result;
+  }
+
+  // ---- Getters thông tin chung & BMI ----
   bool get isLoggedIn => _isLoggedIn;
   String get userEmail => _userEmail;
   double get weight => _weight;
   double get height => _height;
-  double get bmi => _weight / ((_height / 100) * (_height / 100));
+
+  /// Kiểm tra cân nặng, chiều cao đã lưu và BMI tính ra có hợp lệ không
+  bool get hasValidBodyMetrics => calculateValidBmi(_weight, _height) != null;
+
+  /// Giá trị BMI hợp lệ (null nếu dữ liệu cân nặng/chiều cao không hợp lệ)
+  double? get validBmi => calculateValidBmi(_weight, _height);
+
+  /// Getter BMI (trả về 0.0 khi dữ liệu không hợp lệ để không gây lỗi NaN/Infinity)
+  double get bmi => validBmi ?? 0.0;
 
   bool get hasLoadError => _hasLoadError;
   String? get loadErrorMessage => _loadErrorMessage;
@@ -301,6 +369,7 @@ class WorkoutProvider extends ChangeNotifier {
     return completer.future;
   }
 
+  /// Dữ liệu mẫu dành riêng cho cài mới (Plank dùng giây, chạy bộ dùng phút)
   List<Exercise> _defaultExercises(String initialDateKey) => [
     Exercise(
       id: '1',
@@ -308,6 +377,7 @@ class WorkoutProvider extends ChangeNotifier {
       category: 'Tăng cơ',
       sets: 4,
       reps: 10,
+      unit: ExerciseUnits.reps,
       calories: 180,
       dayOfWeek: 'T2, T5',
       notes: 'Giữ chặt bả vai trên ghế, hạ tạ chạm ngực dưới rồi đẩy thẳng.',
@@ -322,6 +392,7 @@ class WorkoutProvider extends ChangeNotifier {
       category: 'Tăng cơ',
       sets: 4,
       reps: 12,
+      unit: ExerciseUnits.reps,
       calories: 240,
       dayOfWeek: 'T3, T6',
       notes: 'Giữ lưng thẳng tự nhiên, mở gối theo hướng mũi chân.',
@@ -336,6 +407,7 @@ class WorkoutProvider extends ChangeNotifier {
       category: 'Cardio',
       sets: 1,
       reps: 20,
+      unit: ExerciseUnits.minutes,
       calories: 300,
       dayOfWeek: 'T4, T7',
       notes: 'Chạy nước rút 30 giây, đi bộ chậm 60 giây lặp lại 20 phút.',
@@ -350,6 +422,7 @@ class WorkoutProvider extends ChangeNotifier {
       category: 'Thể lực',
       sets: 3,
       reps: 60,
+      unit: ExerciseUnits.seconds,
       calories: 90,
       dayOfWeek: 'Mỗi ngày',
       notes: 'Giữ cơ thể tạo thành một đường thẳng từ đầu đến gót chân.',
@@ -367,8 +440,18 @@ class WorkoutProvider extends ChangeNotifier {
         _isLoggedIn = await _storage.getBool('isLoggedIn') ?? false;
         _userEmail =
             await _storage.getString('userEmail') ?? 'nhom.doan@hutech.edu.vn';
-        _weight = await _storage.getDouble('weight') ?? 68.0;
-        _height = await _storage.getDouble('height') ?? 172.0;
+
+        final double? storedWeight = await _storage.getDouble('weight');
+        final double? storedHeight = await _storage.getDouble('height');
+        if (storedWeight == null && storedHeight == null) {
+          _weight = 68.0;
+          _height = 172.0;
+        } else {
+          // Không tự thay thế dữ liệu đã lưu không hợp lệ bằng mặc định
+          // để giao diện nhận biết và yêu cầu người dùng cập nhật lại.
+          _weight = storedWeight ?? -1.0;
+          _height = storedHeight ?? -1.0;
+        }
 
         final String? rawStoreV3 = await _storage.getString(storeKeyV3);
 
@@ -615,6 +698,64 @@ class WorkoutProvider extends ChangeNotifier {
     return true;
   }
 
+  bool _validateExerciseForMutation(Exercise exercise, {required bool isEdit}) {
+    if (exercise.title.trim().isEmpty) {
+      _lastErrorMessage = 'Tên bài tập không được để trống.';
+      notifyListeners();
+      return false;
+    }
+    if (exercise.sets <= 0) {
+      _lastErrorMessage = 'Số hiệp phải là số nguyên lớn hơn 0.';
+      notifyListeners();
+      return false;
+    }
+    if (exercise.reps <= 0) {
+      _lastErrorMessage = 'Số lượng mỗi hiệp phải là số nguyên lớn hơn 0.';
+      notifyListeners();
+      return false;
+    }
+    if (!ExerciseUnits.isValidUnit(exercise.unit)) {
+      _lastErrorMessage = 'Đơn vị bài tập không hợp lệ.';
+      notifyListeners();
+      return false;
+    }
+    if (exercise.calories < 0) {
+      _lastErrorMessage = 'Calo ước tính phải lớn hơn hoặc bằng 0.';
+      notifyListeners();
+      return false;
+    }
+    if (exercise.scheduleType == ScheduleTypes.once) {
+      if (!DateUtilsHelper.isValidDateKey(exercise.scheduledDate)) {
+        _lastErrorMessage = 'Lịch tập một lần phải có ngày hợp lệ.';
+        notifyListeners();
+        return false;
+      }
+      if (isEdit && exercise.scheduledDate!.compareTo(todayDateKey) < 0) {
+        _lastErrorMessage =
+            'Khi cập nhật lịch, ngày tập một lần phải từ hôm nay trở đi.';
+        notifyListeners();
+        return false;
+      }
+    } else if (exercise.scheduleType == ScheduleTypes.weekly) {
+      if (exercise.repeatDays.isEmpty ||
+          exercise.repeatDays.any((d) => d < 1 || d > 7)) {
+        _lastErrorMessage = 'Lịch lặp hằng tuần phải chọn ít nhất một thứ.';
+        notifyListeners();
+        return false;
+      }
+      if (!DateUtilsHelper.isValidDateKey(exercise.startDate)) {
+        _lastErrorMessage = 'Ngày bắt đầu của lịch lặp không hợp lệ.';
+        notifyListeners();
+        return false;
+      }
+    } else {
+      _lastErrorMessage = 'Kiểu lịch tập không hợp lệ.';
+      notifyListeners();
+      return false;
+    }
+    return true;
+  }
+
   // ---- Đăng nhập / Đăng xuất / BMI ----
   Future<bool> login(String email) {
     return _enqueueTask(() async {
@@ -649,20 +790,42 @@ class WorkoutProvider extends ChangeNotifier {
   }
 
   Future<bool> updateBodyMetrics(double newWeight, double newHeight) {
+    final double capturedWeight = newWeight;
+    final double capturedHeight = newHeight;
     return _enqueueTask(() async {
-      final ok1 = await _storage.setDouble('weight', newWeight);
-      final ok2 = await _storage.setDouble('height', newHeight);
-      if (!ok1 || !ok2) {
-        _lastErrorMessage = 'Không thể lưu chỉ số cơ thể.';
+      if (calculateValidBmi(capturedWeight, capturedHeight) == null) {
+        _lastErrorMessage =
+            'Cân nặng và chiều cao phải là số dương hữu hạn lớn hơn 0.';
         notifyListeners();
         return false;
       }
-      _weight = newWeight;
-      _height = newHeight;
+
+      final ok1 = await _storage.setDouble('weight', capturedWeight);
+      final ok2 = await _storage.setDouble('height', capturedHeight);
+      if (!ok1 || !ok2) {
+        _lastErrorMessage = 'Không thể lưu chỉ số cơ thể. Vui lòng thử lại.';
+        notifyListeners();
+        return false;
+      }
+      _weight = capturedWeight;
+      _height = capturedHeight;
       _lastErrorMessage = null;
       notifyListeners();
       return true;
     });
+  }
+
+  /// Cập nhật cân nặng & chiều cao từ chuỗi người dùng nhập (hỗ trợ dấu chấm hoặc dấu phẩy)
+  Future<bool> updateBodyMetricsFromInput(String rawWeight, String rawHeight) {
+    final parsedWeight = tryParseBodyMetric(rawWeight);
+    final parsedHeight = tryParseBodyMetric(rawHeight);
+    if (parsedWeight == null || parsedHeight == null) {
+      _lastErrorMessage =
+          'Vui lòng nhập cân nặng và chiều cao là số dương hợp lệ (> 0).';
+      notifyListeners();
+      return Future<bool>.value(false);
+    }
+    return updateBodyMetrics(parsedWeight, parsedHeight);
   }
 
   // ---- CREATE: Thêm bài tập mới ----
@@ -670,6 +833,9 @@ class WorkoutProvider extends ChangeNotifier {
     final Exercise capturedExercise = exercise;
     return _enqueueTask(() async {
       if (!_checkCanMutate()) return false;
+      if (!_validateExerciseForMutation(capturedExercise, isEdit: false)) {
+        return false;
+      }
 
       final List<Exercise> candidateExercises = List<Exercise>.from(_exercises);
       final existingIndex = candidateExercises.indexWhere(
@@ -705,6 +871,9 @@ class WorkoutProvider extends ChangeNotifier {
     final String capturedTodayKey = todayDateKey;
     return _enqueueTask(() async {
       if (!_checkCanMutate()) return false;
+      if (!_validateExerciseForMutation(capturedUpdated, isEdit: true)) {
+        return false;
+      }
 
       final index = _exercises.indexWhere((e) => e.id == capturedUpdated.id);
       if (index == -1) {
@@ -719,6 +888,7 @@ class WorkoutProvider extends ChangeNotifier {
         newCategory: capturedUpdated.category,
         newSets: capturedUpdated.sets,
         newReps: capturedUpdated.reps,
+        newUnit: capturedUpdated.unit,
         newCalories: capturedUpdated.calories,
         newNotes: capturedUpdated.notes,
         newScheduleType: capturedUpdated.scheduleType,
@@ -859,6 +1029,7 @@ class WorkoutProvider extends ChangeNotifier {
       categorySnapshot: ex.category,
       setsSnapshot: ex.sets,
       repsSnapshot: ex.reps,
+      unitSnapshot: ex.unit,
       caloriesSnapshot: ex.calories,
       notesSnapshot: ex.notes,
       scheduleLabelSnapshot: ex.scheduleLabel,

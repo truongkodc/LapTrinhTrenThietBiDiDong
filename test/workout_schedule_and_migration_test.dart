@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:fitplan_hutech/helpers/date_utils_helper.dart';
 import 'package:fitplan_hutech/models/exercise.dart';
+import 'package:fitplan_hutech/models/workout_completion.dart';
 import 'package:fitplan_hutech/providers/workout_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -617,6 +618,674 @@ void main() {
         reloadedProvider.isExerciseCompletedOn('4', dateKey: '2026-11-10'),
         isTrue,
       );
+    });
+  });
+
+  group('Đơn vị bài tập (lần, giây, phút), bảo toàn snapshot và kiểm tra dữ liệu nhập', () {
+    test('Dữ liệu bài tập và snapshot cũ thiếu trường unit mặc định là "lần", không tự đoán theo tên bài; cài mới dùng giây cho Plank và phút cho chạy bộ', () async {
+      // 1. Cài mới (fresh install): Plank dùng 'giây', Chạy bộ dùng 'phút'
+      SharedPreferences.setMockInitialValues({});
+      final freshProvider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 8, 0),
+      );
+      await freshProvider.loadData();
+
+      final defaultBench = freshProvider.exercises.firstWhere(
+        (e) => e.id == '1',
+      );
+      final defaultRun = freshProvider.exercises.firstWhere((e) => e.id == '3');
+      final defaultPlank = freshProvider.exercises.firstWhere(
+        (e) => e.id == '4',
+      );
+
+      expect(defaultBench.unit, ExerciseUnits.reps);
+      expect(defaultBench.volumeLabel, '4 hiệp × 10 lần');
+      expect(defaultRun.unit, ExerciseUnits.minutes);
+      expect(defaultRun.volumeLabel, '1 hiệp × 20 phút');
+      expect(defaultPlank.unit, ExerciseUnits.seconds);
+      expect(defaultPlank.volumeLabel, '3 hiệp × 60 giây');
+
+      // 2. Dữ liệu cũ (exercises_v2) có tên Plank và Chạy bộ nhưng không có trường unit -> giữ mặc định 'lần', không tự đoán
+      final legacyJson = jsonEncode([
+        {
+          'id': 'old_plank',
+          'title': 'Plank siết cơ bụng',
+          'category': 'Thể lực',
+          'sets': 3,
+          'reps': 60,
+          'calories': 90,
+          'dayOfWeek': 'Mỗi ngày',
+          'notes': 'Giữ lưng thẳng',
+          'isCompleted': false,
+        },
+        {
+          'id': 'old_run',
+          'title': 'Chạy bộ biến tốc',
+          'category': 'Cardio',
+          'sets': 1,
+          'reps': 20,
+          'calories': 300,
+          'dayOfWeek': 'Mỗi ngày',
+          'notes': 'Chạy đều',
+          'isCompleted': false,
+        },
+      ]);
+
+      SharedPreferences.setMockInitialValues({
+        WorkoutProvider.legacyExercisesKey: legacyJson,
+      });
+      final migratedProvider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 8, 0),
+      );
+      await migratedProvider.loadData();
+
+      expect(migratedProvider.exercises[0].unit, 'lần');
+      expect(migratedProvider.exercises[0].volumeLabel, '3 hiệp × 60 lần');
+      expect(migratedProvider.exercises[1].unit, 'lần');
+      expect(migratedProvider.exercises[1].volumeLabel, '1 hiệp × 20 lần');
+
+      // 3. Bản ghi hoàn thành cũ (WorkoutCompletion) không có unitSnapshot -> mặc định là 'lần'
+      final legacyCompletion = WorkoutCompletion.fromJson({
+        'exerciseId': 'old_plank',
+        'dateKey': '2026-11-10',
+        'completedAt': '2026-11-10T09:00:00.000',
+        'titleSnapshot': 'Plank siết cơ bụng',
+        'categorySnapshot': 'Thể lực',
+        'setsSnapshot': 3,
+        'repsSnapshot': 60,
+        'caloriesSnapshot': 90,
+      });
+      expect(legacyCompletion.unitSnapshot, 'lần');
+      expect(legacyCompletion.volumeSnapshotLabel, '3 hiệp × 60 lần');
+    });
+
+    test('Lưu và đọc lại đủ 3 đơn vị (lần, giây, phút); sửa đơn vị bài tập không làm đổi đơn vị trong snapshot lịch sử', () async {
+      SharedPreferences.setMockInitialValues({});
+      DateTime fakeNow = DateTime(2026, 11, 10, 9, 0);
+      final provider = WorkoutProvider(clock: () => fakeNow);
+      await provider.loadData();
+
+      final exReps = Exercise(
+        id: 'u_reps',
+        title: 'Hít đất',
+        category: 'Tăng cơ',
+        sets: 3,
+        reps: 12,
+        unit: ExerciseUnits.reps,
+        calories: 100,
+        dayOfWeek: 'Mỗi ngày',
+        scheduleType: ScheduleTypes.weekly,
+        repeatDays: const [1, 2, 3, 4, 5, 6, 7],
+        startDate: '2026-11-10',
+      );
+      final exSeconds = Exercise(
+        id: 'u_sec',
+        title: 'Wall Sit',
+        category: 'Thể lực',
+        sets: 3,
+        reps: 45,
+        unit: ExerciseUnits.seconds,
+        calories: 80,
+        dayOfWeek: 'Mỗi ngày',
+        scheduleType: ScheduleTypes.weekly,
+        repeatDays: const [1, 2, 3, 4, 5, 6, 7],
+        startDate: '2026-11-10',
+      );
+      final exMinutes = Exercise(
+        id: 'u_min',
+        title: 'Đạp xe bền',
+        category: 'Cardio',
+        sets: 1,
+        reps: 30,
+        unit: ExerciseUnits.minutes,
+        calories: 250,
+        dayOfWeek: 'Mỗi ngày',
+        scheduleType: ScheduleTypes.weekly,
+        repeatDays: const [1, 2, 3, 4, 5, 6, 7],
+        startDate: '2026-11-10',
+      );
+
+      expect(await provider.addExercise(exReps), isTrue);
+      expect(await provider.addExercise(exSeconds), isTrue);
+      expect(await provider.addExercise(exMinutes), isTrue);
+
+      // Hoàn thành bài exReps ở ngày 2026-11-10 khi đơn vị đang là 'lần'
+      provider.selectDate(DateTime(2026, 11, 10));
+      expect(
+        await provider.markExerciseCompleted('u_reps', dateKey: '2026-11-10'),
+        isTrue,
+      );
+
+      final compBeforeEdit = provider.completionForExerciseOn(
+        'u_reps',
+        dateKey: '2026-11-10',
+      );
+      expect(compBeforeEdit!.unitSnapshot, 'lần');
+      expect(compBeforeEdit.caloriesSnapshot, 100);
+
+      // Sang ngày 2026-11-11, người dùng sửa bài u_reps từ 'lần' sang 'giây' (ví dụ giữ tĩnh 30 giây)
+      fakeNow = DateTime(2026, 11, 11, 10, 0);
+      final currentExReps = provider.exercises.firstWhere(
+        (e) => e.id == 'u_reps',
+      );
+      expect(
+        await provider.updateExercise(
+          currentExReps.copyWith(reps: 30, unit: ExerciseUnits.seconds),
+        ),
+        isTrue,
+      );
+
+      // Khởi tạo lại provider để kiểm tra dữ liệu lưu trữ thực tế
+      final reloaded = WorkoutProvider(clock: () => fakeNow);
+      await reloaded.loadData();
+
+      final reloadedReps = reloaded.exercises.firstWhere(
+        (e) => e.id == 'u_reps',
+      );
+      final reloadedSec = reloaded.exercises.firstWhere((e) => e.id == 'u_sec');
+      final reloadedMin = reloaded.exercises.firstWhere((e) => e.id == 'u_min');
+
+      expect(reloadedReps.unit, 'giây');
+      expect(reloadedReps.volumeLabel, '3 hiệp × 30 giây');
+      expect(reloadedSec.unit, 'giây');
+      expect(reloadedSec.volumeLabel, '3 hiệp × 45 giây');
+      expect(reloadedMin.unit, 'phút');
+      expect(reloadedMin.volumeLabel, '1 hiệp × 30 phút');
+
+      // Kiểm tra lịch sử ngày 2026-11-10 vẫn giữ nguyên snapshot cũ ('3 hiệp × 12 lần')
+      final pastItems = reloaded.itemsForDate(DateTime(2026, 11, 10));
+      final pastItemReps = pastItems.firstWhere(
+        (i) => i.exerciseId == 'u_reps',
+      );
+      expect(pastItemReps.isCompleted, isTrue);
+      expect(pastItemReps.displayUnit, 'lần');
+      expect(pastItemReps.displayVolumeLabel, '3 hiệp × 12 lần');
+
+      // Trong khi ngày 2026-11-11 hiển thị đơn vị mới ('3 hiệp × 30 giây')
+      final todayItems = reloaded.itemsForDate(DateTime(2026, 11, 11));
+      final todayItemReps = todayItems.firstWhere(
+        (i) => i.exerciseId == 'u_reps',
+      );
+      expect(todayItemReps.isCompleted, isFalse);
+      expect(todayItemReps.displayUnit, 'giây');
+      expect(todayItemReps.displayVolumeLabel, '3 hiệp × 30 giây');
+    });
+
+    test(
+      'Từ chối dữ liệu bài tập không hợp lệ và chấp nhận calories = 0',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final provider = WorkoutProvider(
+          clock: () => DateTime(2026, 11, 10, 9, 0),
+        );
+        await provider.loadData();
+
+        // Chấp nhận calories = 0 (ví dụ bài giãn cơ nhẹ)
+        final zeroCalEx = Exercise(
+          id: 'zero_cal',
+          title: 'Giãn cơ cổ vai gáy',
+          category: 'Thể lực',
+          sets: 2,
+          reps: 30,
+          unit: ExerciseUnits.seconds,
+          calories: 0,
+          dayOfWeek: 'Mỗi ngày',
+          scheduleType: ScheduleTypes.weekly,
+          repeatDays: const [1, 2, 3, 4, 5, 6, 7],
+          startDate: '2026-11-10',
+        );
+        expect(await provider.addExercise(zeroCalEx), isTrue);
+
+        // Từ chối tên rỗng, sets <= 0, reps <= 0, calories < 0, unit sai
+        expect(
+          () => Exercise(
+            id: 'bad_title',
+            title: '   ',
+            category: 'Tăng cơ',
+            sets: 3,
+            reps: 10,
+            calories: 50,
+            dayOfWeek: 'Mỗi ngày',
+          ),
+          throwsFormatException,
+        );
+        expect(
+          () => Exercise(
+            id: 'bad_sets',
+            title: 'Squat',
+            category: 'Tăng cơ',
+            sets: 0,
+            reps: 10,
+            calories: 50,
+            dayOfWeek: 'Mỗi ngày',
+          ),
+          throwsFormatException,
+        );
+        expect(
+          () => Exercise(
+            id: 'bad_reps',
+            title: 'Squat',
+            category: 'Tăng cơ',
+            sets: 3,
+            reps: -5,
+            calories: 50,
+            dayOfWeek: 'Mỗi ngày',
+          ),
+          throwsFormatException,
+        );
+        expect(
+          () => Exercise(
+            id: 'bad_cal',
+            title: 'Squat',
+            category: 'Tăng cơ',
+            sets: 3,
+            reps: 10,
+            calories: -1,
+            dayOfWeek: 'Mỗi ngày',
+          ),
+          throwsFormatException,
+        );
+        expect(
+          () => Exercise(
+            id: 'bad_unit',
+            title: 'Squat',
+            category: 'Tăng cơ',
+            sets: 3,
+            reps: 10,
+            unit: 'km',
+            calories: 50,
+            dayOfWeek: 'Mỗi ngày',
+          ),
+          throwsFormatException,
+        );
+
+        // Kiểm tra helper parse số nguyên của Provider
+        expect(WorkoutProvider.tryParsePositiveInt('10'), 10);
+        expect(WorkoutProvider.tryParsePositiveInt('0'), isNull);
+        expect(WorkoutProvider.tryParsePositiveInt('-3'), isNull);
+        expect(WorkoutProvider.tryParsePositiveInt('10.5'), isNull);
+        expect(WorkoutProvider.tryParseNonNegativeInt('0'), 0);
+        expect(WorkoutProvider.tryParseNonNegativeInt('150'), 150);
+        expect(WorkoutProvider.tryParseNonNegativeInt('-1'), isNull);
+      },
+    );
+
+    test('Kiểm tra cân nặng, chiều cao và BMI: hỗ trợ dấu chấm/phẩy, từ chối 0/âm/NaN/Infinity/phân tách hàng nghìn và dữ liệu lưu hỏng', () async {
+      expect(WorkoutProvider.tryParseBodyMetric('67.5'), closeTo(67.5, 1e-6));
+      expect(WorkoutProvider.tryParseBodyMetric('67,5'), closeTo(67.5, 1e-6));
+      expect(WorkoutProvider.tryParseBodyMetric(' 172 '), closeTo(172.0, 1e-6));
+
+      // Từ chối rỗng, chữ, <= 0, NaN, Infinity, dấu phân tách hàng nghìn
+      expect(WorkoutProvider.tryParseBodyMetric(''), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('abc'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('0'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('-65'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('NaN'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('Infinity'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('1,000.5'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('1.000,5'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('67..5'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('67,,5'), isNull);
+
+      SharedPreferences.setMockInitialValues({'weight': -10.0, 'height': 0.0});
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await provider.loadData();
+
+      // Khi dữ liệu lưu không hợp lệ, không tự gán 68/172 mà báo trạng thái chưa hợp lệ
+      expect(provider.hasValidBodyMetrics, isFalse);
+      expect(provider.validBmi, isNull);
+
+      // Cập nhật bằng giá trị không hợp lệ phải bị từ chối
+      expect(await provider.updateBodyMetrics(0, 170), isFalse);
+      expect(await provider.updateBodyMetrics(65, double.nan), isFalse);
+      expect(await provider.updateBodyMetrics(double.infinity, 170), isFalse);
+      expect(
+        await provider.updateBodyMetricsFromInput('1,000.5', '170'),
+        isFalse,
+      );
+
+      // Cập nhật bằng dấu phẩy thập phân hợp lệ
+      expect(
+        await provider.updateBodyMetricsFromInput('67,5', '172,5'),
+        isTrue,
+      );
+      expect(provider.hasValidBodyMetrics, isTrue);
+      expect(provider.weight, closeTo(67.5, 1e-6));
+      expect(provider.height, closeTo(172.5, 1e-6));
+      expect(provider.validBmi, closeTo(67.5 / (1.725 * 1.725), 1e-5));
+    });
+  });
+
+  group('Đơn vị bài tập (lần, giây, phút), bảo toàn snapshot và kiểm tra dữ liệu nhập', () {
+    test('Dữ liệu bài tập và snapshot cũ thiếu trường unit mặc định là "lần", không tự đoán theo tên bài; cài mới dùng giây cho Plank và phút cho chạy bộ', () async {
+      // 1. Cài mới (fresh install): Plank dùng 'giây', Chạy bộ dùng 'phút'
+      SharedPreferences.setMockInitialValues({});
+      final freshProvider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 8, 0),
+      );
+      await freshProvider.loadData();
+
+      final defaultBench = freshProvider.exercises.firstWhere(
+        (e) => e.id == '1',
+      );
+      final defaultRun = freshProvider.exercises.firstWhere((e) => e.id == '3');
+      final defaultPlank = freshProvider.exercises.firstWhere(
+        (e) => e.id == '4',
+      );
+
+      expect(defaultBench.unit, ExerciseUnits.reps);
+      expect(defaultBench.volumeLabel, '4 hiệp × 10 lần');
+      expect(defaultRun.unit, ExerciseUnits.minutes);
+      expect(defaultRun.volumeLabel, '1 hiệp × 20 phút');
+      expect(defaultPlank.unit, ExerciseUnits.seconds);
+      expect(defaultPlank.volumeLabel, '3 hiệp × 60 giây');
+
+      // 2. Dữ liệu cũ (exercises_v2) có tên Plank và Chạy bộ nhưng không có trường unit -> giữ mặc định 'lần', không tự đoán
+      final legacyJson = jsonEncode([
+        {
+          'id': 'old_plank',
+          'title': 'Plank siết cơ bụng',
+          'category': 'Thể lực',
+          'sets': 3,
+          'reps': 60,
+          'calories': 90,
+          'dayOfWeek': 'Mỗi ngày',
+          'notes': 'Giữ lưng thẳng',
+          'isCompleted': false,
+        },
+        {
+          'id': 'old_run',
+          'title': 'Chạy bộ biến tốc',
+          'category': 'Cardio',
+          'sets': 1,
+          'reps': 20,
+          'calories': 300,
+          'dayOfWeek': 'Mỗi ngày',
+          'notes': 'Chạy đều',
+          'isCompleted': false,
+        },
+      ]);
+
+      SharedPreferences.setMockInitialValues({
+        WorkoutProvider.legacyExercisesKey: legacyJson,
+      });
+      final migratedProvider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 8, 0),
+      );
+      await migratedProvider.loadData();
+
+      expect(migratedProvider.exercises[0].unit, 'lần');
+      expect(migratedProvider.exercises[0].volumeLabel, '3 hiệp × 60 lần');
+      expect(migratedProvider.exercises[1].unit, 'lần');
+      expect(migratedProvider.exercises[1].volumeLabel, '1 hiệp × 20 lần');
+
+      // 3. Bản ghi hoàn thành cũ (WorkoutCompletion) không có unitSnapshot -> mặc định là 'lần'
+      final legacyCompletion = WorkoutCompletion.fromJson({
+        'exerciseId': 'old_plank',
+        'dateKey': '2026-11-10',
+        'completedAt': '2026-11-10T09:00:00.000',
+        'titleSnapshot': 'Plank siết cơ bụng',
+        'categorySnapshot': 'Thể lực',
+        'setsSnapshot': 3,
+        'repsSnapshot': 60,
+        'caloriesSnapshot': 90,
+      });
+      expect(legacyCompletion.unitSnapshot, 'lần');
+      expect(legacyCompletion.volumeSnapshotLabel, '3 hiệp × 60 lần');
+    });
+
+    test('Lưu và đọc lại đủ 3 đơn vị (lần, giây, phút); sửa đơn vị bài tập không làm đổi đơn vị trong snapshot lịch sử', () async {
+      SharedPreferences.setMockInitialValues({});
+      DateTime fakeNow = DateTime(2026, 11, 10, 9, 0);
+      final provider = WorkoutProvider(clock: () => fakeNow);
+      await provider.loadData();
+
+      final exReps = Exercise(
+        id: 'u_reps',
+        title: 'Hít đất',
+        category: 'Tăng cơ',
+        sets: 3,
+        reps: 12,
+        unit: ExerciseUnits.reps,
+        calories: 100,
+        dayOfWeek: 'Mỗi ngày',
+        scheduleType: ScheduleTypes.weekly,
+        repeatDays: const [1, 2, 3, 4, 5, 6, 7],
+        startDate: '2026-11-10',
+      );
+      final exSeconds = Exercise(
+        id: 'u_sec',
+        title: 'Wall Sit',
+        category: 'Thể lực',
+        sets: 3,
+        reps: 45,
+        unit: ExerciseUnits.seconds,
+        calories: 80,
+        dayOfWeek: 'Mỗi ngày',
+        scheduleType: ScheduleTypes.weekly,
+        repeatDays: const [1, 2, 3, 4, 5, 6, 7],
+        startDate: '2026-11-10',
+      );
+      final exMinutes = Exercise(
+        id: 'u_min',
+        title: 'Đạp xe bền',
+        category: 'Cardio',
+        sets: 1,
+        reps: 30,
+        unit: ExerciseUnits.minutes,
+        calories: 250,
+        dayOfWeek: 'Mỗi ngày',
+        scheduleType: ScheduleTypes.weekly,
+        repeatDays: const [1, 2, 3, 4, 5, 6, 7],
+        startDate: '2026-11-10',
+      );
+
+      expect(await provider.addExercise(exReps), isTrue);
+      expect(await provider.addExercise(exSeconds), isTrue);
+      expect(await provider.addExercise(exMinutes), isTrue);
+
+      // Hoàn thành bài exReps ở ngày 2026-11-10 khi đơn vị đang là 'lần'
+      provider.selectDate(DateTime(2026, 11, 10));
+      expect(
+        await provider.markExerciseCompleted('u_reps', dateKey: '2026-11-10'),
+        isTrue,
+      );
+
+      final compBeforeEdit = provider.completionForExerciseOn(
+        'u_reps',
+        dateKey: '2026-11-10',
+      );
+      expect(compBeforeEdit!.unitSnapshot, 'lần');
+      expect(compBeforeEdit.caloriesSnapshot, 100);
+
+      // Sang ngày 2026-11-11, người dùng sửa bài u_reps từ 'lần' sang 'giây' (ví dụ giữ tĩnh 30 giây)
+      fakeNow = DateTime(2026, 11, 11, 10, 0);
+      final currentExReps = provider.exercises.firstWhere(
+        (e) => e.id == 'u_reps',
+      );
+      expect(
+        await provider.updateExercise(
+          currentExReps.copyWith(reps: 30, unit: ExerciseUnits.seconds),
+        ),
+        isTrue,
+      );
+
+      // Khởi tạo lại provider để kiểm tra dữ liệu lưu trữ thực tế
+      final reloaded = WorkoutProvider(clock: () => fakeNow);
+      await reloaded.loadData();
+
+      final reloadedReps = reloaded.exercises.firstWhere(
+        (e) => e.id == 'u_reps',
+      );
+      final reloadedSec = reloaded.exercises.firstWhere((e) => e.id == 'u_sec');
+      final reloadedMin = reloaded.exercises.firstWhere((e) => e.id == 'u_min');
+
+      expect(reloadedReps.unit, 'giây');
+      expect(reloadedReps.volumeLabel, '3 hiệp × 30 giây');
+      expect(reloadedSec.unit, 'giây');
+      expect(reloadedSec.volumeLabel, '3 hiệp × 45 giây');
+      expect(reloadedMin.unit, 'phút');
+      expect(reloadedMin.volumeLabel, '1 hiệp × 30 phút');
+
+      // Kiểm tra lịch sử ngày 2026-11-10 vẫn giữ nguyên snapshot cũ ('3 hiệp × 12 lần')
+      final pastItems = reloaded.itemsForDate(DateTime(2026, 11, 10));
+      final pastItemReps = pastItems.firstWhere(
+        (i) => i.exerciseId == 'u_reps',
+      );
+      expect(pastItemReps.isCompleted, isTrue);
+      expect(pastItemReps.displayUnit, 'lần');
+      expect(pastItemReps.displayVolumeLabel, '3 hiệp × 12 lần');
+
+      // Trong khi ngày 2026-11-11 hiển thị đơn vị mới ('3 hiệp × 30 giây')
+      final todayItems = reloaded.itemsForDate(DateTime(2026, 11, 11));
+      final todayItemReps = todayItems.firstWhere(
+        (i) => i.exerciseId == 'u_reps',
+      );
+      expect(todayItemReps.isCompleted, isFalse);
+      expect(todayItemReps.displayUnit, 'giây');
+      expect(todayItemReps.displayVolumeLabel, '3 hiệp × 30 giây');
+    });
+
+    test('Từ chối dữ liệu bài tập không hợp lệ và chấp nhận calories = 0', () async {
+      SharedPreferences.setMockInitialValues({});
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await provider.loadData();
+
+      // Chấp nhận calories = 0 (ví dụ bài giãn cơ nhẹ)
+      final zeroCalEx = Exercise(
+        id: 'zero_cal',
+        title: 'Giãn cơ cổ vai gáy',
+        category: 'Thể lực',
+        sets: 2,
+        reps: 30,
+        unit: ExerciseUnits.seconds,
+        calories: 0,
+        dayOfWeek: 'Mỗi ngày',
+        scheduleType: ScheduleTypes.weekly,
+        repeatDays: const [1, 2, 3, 4, 5, 6, 7],
+        startDate: '2026-11-10',
+      );
+      expect(await provider.addExercise(zeroCalEx), isTrue);
+
+      // Từ chối tên rỗng, sets <= 0, reps <= 0, calories < 0, unit sai
+      expect(
+        () => Exercise(
+          id: 'bad_title',
+          title: '   ',
+          category: 'Tăng cơ',
+          sets: 3,
+          reps: 10,
+          calories: 50,
+          dayOfWeek: 'Mỗi ngày',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => Exercise(
+          id: 'bad_sets',
+          title: 'Squat',
+          category: 'Tăng cơ',
+          sets: 0,
+          reps: 10,
+          calories: 50,
+          dayOfWeek: 'Mỗi ngày',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => Exercise(
+          id: 'bad_reps',
+          title: 'Squat',
+          category: 'Tăng cơ',
+          sets: 3,
+          reps: -5,
+          calories: 50,
+          dayOfWeek: 'Mỗi ngày',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => Exercise(
+          id: 'bad_cal',
+          title: 'Squat',
+          category: 'Tăng cơ',
+          sets: 3,
+          reps: 10,
+          calories: -1,
+          dayOfWeek: 'Mỗi ngày',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => Exercise(
+          id: 'bad_unit',
+          title: 'Squat',
+          category: 'Tăng cơ',
+          sets: 3,
+          reps: 10,
+          unit: 'km',
+          calories: 50,
+          dayOfWeek: 'Mỗi ngày',
+        ),
+        throwsFormatException,
+      );
+
+      // Kiểm tra helper parse số nguyên của Provider
+      expect(WorkoutProvider.tryParsePositiveInt('10'), 10);
+      expect(WorkoutProvider.tryParsePositiveInt('0'), isNull);
+      expect(WorkoutProvider.tryParsePositiveInt('-3'), isNull);
+      expect(WorkoutProvider.tryParsePositiveInt('10.5'), isNull);
+      expect(WorkoutProvider.tryParseNonNegativeInt('0'), 0);
+      expect(WorkoutProvider.tryParseNonNegativeInt('150'), 150);
+      expect(WorkoutProvider.tryParseNonNegativeInt('-1'), isNull);
+    });
+
+    test('Kiểm tra cân nặng, chiều cao và BMI: hỗ trợ dấu chấm/phẩy, từ chối 0/âm/NaN/Infinity/phân tách hàng nghìn và dữ liệu lưu hỏng', () async {
+      expect(WorkoutProvider.tryParseBodyMetric('67.5'), closeTo(67.5, 1e-6));
+      expect(WorkoutProvider.tryParseBodyMetric('67,5'), closeTo(67.5, 1e-6));
+      expect(WorkoutProvider.tryParseBodyMetric(' 172 '), closeTo(172.0, 1e-6));
+
+      // Từ chối rỗng, chữ, <= 0, NaN, Infinity, dấu phân tách hàng nghìn
+      expect(WorkoutProvider.tryParseBodyMetric(''), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('abc'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('0'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('-65'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('NaN'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('Infinity'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('1,000.5'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('1.000,5'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('67..5'), isNull);
+      expect(WorkoutProvider.tryParseBodyMetric('67,,5'), isNull);
+
+      SharedPreferences.setMockInitialValues({
+        'weight': -10.0,
+        'height': 0.0,
+      });
+      final provider = WorkoutProvider(
+        clock: () => DateTime(2026, 11, 10, 9, 0),
+      );
+      await provider.loadData();
+
+      // Khi dữ liệu lưu không hợp lệ, không tự gán 68/172 mà báo trạng thái chưa hợp lệ
+      expect(provider.hasValidBodyMetrics, isFalse);
+      expect(provider.validBmi, isNull);
+
+      // Cập nhật bằng giá trị không hợp lệ phải bị từ chối
+      expect(await provider.updateBodyMetrics(0, 170), isFalse);
+      expect(await provider.updateBodyMetrics(65, double.nan), isFalse);
+      expect(await provider.updateBodyMetrics(double.infinity, 170), isFalse);
+      expect(await provider.updateBodyMetricsFromInput('1,000.5', '170'), isFalse);
+
+      // Cập nhật bằng dấu phẩy thập phân hợp lệ
+      expect(await provider.updateBodyMetricsFromInput('67,5', '172,5'), isTrue);
+      expect(provider.hasValidBodyMetrics, isTrue);
+      expect(provider.weight, closeTo(67.5, 1e-6));
+      expect(provider.height, closeTo(172.5, 1e-6));
+      expect(provider.validBmi, closeTo(67.5 / (1.725 * 1.725), 1e-5));
     });
   });
 }
