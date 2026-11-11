@@ -25,10 +25,11 @@ Mục tiêu của đồ án:
 |---|---|---|---|
 | Nguyễn Văn Sơn Trường | 2380164898 | truongkodc | Khởi tạo dự án và xây dựng phiên bản FitPlan ban đầu bằng Flutter: giao diện ba tab, đăng nhập cục bộ, quản lý và phân loại bài tập, xem chi tiết, đánh dấu hoàn thành và thống kê tiến độ, tính BMI, lưu dữ liệu bằng SharedPreferences và màn hình hồ sơ nhóm. |
 | Châu Nhật Hữu | 2380600946 | huu2005 | Tiếp nhận và tổ chức lại mã nguồn; sửa lỗi; bổ sung lịch tập theo ngày và lịch sử hoàn thành, đơn vị bài tập, kiểm tra dữ liệu nhập, gợi ý kế hoạch theo quy tắc; hoàn thiện giao diện, hồ sơ và đăng xuất; kiểm thử, cập nhật README và quản lý các bản cập nhật trên Git. |
+| Ngô Ngọc Ân | 2380600097 | ngo-ngoc-an | Soạn tài liệu mô tả các chức năng của FitPlan. |
+| Trần Quang Việt | 2380602541 | MAPchai | Kiểm thử thủ công FitPlan trên máy ảo Android, ghi kết quả kiểm thử, chụp ảnh minh chứng và soạn kịch bản video demo. |
+Nhóm gồm 4 thành viên. 
 
-Nhóm gồm 4 thành viên. Bảng này hiện ghi nhận phần việc đã xác nhận của 2 thành viên; thông tin và đóng góp của 2 thành viên còn lại sẽ được bổ sung sau.
-
-* **Giảng viên hướng dẫn / phụ trách:** [Điền Tên Giảng Viên Phụ Trách]
+* **Giảng viên hướng dẫn / phụ trách:** Bùi Phú Khuyên
 * **Kho lưu trữ mã nguồn (GitHub):** [https://github.com/truongkodc/LapTrinhTrenThietBiDiDong.git](https://github.com/truongkodc/LapTrinhTrenThietBiDiDong.git)
 
 ---
