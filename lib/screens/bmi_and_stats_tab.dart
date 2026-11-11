@@ -77,6 +77,34 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
     return null;
   }
 
+  Widget _buildWeightField() {
+    return TextFormField(
+      key: const Key('weight_input_field'),
+      controller: _weightCtrl,
+      enabled: !_isSaving,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: const InputDecoration(
+        labelText: 'Cân nặng (kg)',
+        errorMaxLines: 6,
+      ),
+      validator: _validateWeight,
+    );
+  }
+
+  Widget _buildHeightField() {
+    return TextFormField(
+      key: const Key('height_input_field'),
+      controller: _heightCtrl,
+      enabled: !_isSaving,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: const InputDecoration(
+        labelText: 'Chiều cao (cm)',
+        errorMaxLines: 6,
+      ),
+      validator: _validateHeight,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -247,43 +275,33 @@ class _BmiAndStatsTabState extends State<BmiAndStatsTab> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  key: const Key('weight_input_field'),
-                                  controller: _weightCtrl,
-                                  enabled: !_isSaving,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  decoration: const InputDecoration(
-                                    labelText: 'Cân nặng (kg)',
-                                    errorMaxLines: 3,
-                                  ),
-                                  validator: _validateWeight,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextFormField(
-                                  key: const Key('height_input_field'),
-                                  controller: _heightCtrl,
-                                  enabled: !_isSaving,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  decoration: const InputDecoration(
-                                    labelText: 'Chiều cao (cm)',
-                                    errorMaxLines: 3,
-                                  ),
-                                  validator: _validateHeight,
-                                ),
-                              ),
-                            ],
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final textScale = MediaQuery.textScalerOf(context)
+                                  .scale(1.0);
+                              final shouldStackVertically =
+                                  constraints.maxWidth < 480 ||
+                                  textScale > 1.15;
+                              if (shouldStackVertically) {
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _buildWeightField(),
+                                    const SizedBox(height: 12),
+                                    _buildHeightField(),
+                                  ],
+                                );
+                              }
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: _buildWeightField()),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: _buildHeightField()),
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 16),
                           SizedBox(
