@@ -145,6 +145,7 @@ class AppTheme {
         filled: true,
         fillColor: Colors.white,
         labelStyle: const TextStyle(color: textSecondary),
+        errorMaxLines: 5,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
           borderSide: const BorderSide(color: Color(0xFFCBD2D9)),

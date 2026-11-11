@@ -9,6 +9,7 @@ import 'package:fitplan_hutech/screens/login_screen.dart';
 import 'package:fitplan_hutech/screens/plan_suggestion_screen.dart';
 import 'package:fitplan_hutech/screens/welcome_choice_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -461,6 +462,70 @@ void main() {
       expect(provider.height, closeTo(172.5, 1e-6));
       expect(find.text('22.7'), findsOneWidget);
       expect(find.text('Đã cập nhật chỉ số BMI!'), findsOneWidget);
+      // Chờ thông báo lần lưu trước đóng trước khi kiểm tra tiếp.
+await tester.pump(const Duration(seconds: 5));
+await tester.pumpAndSettle();
+
+      // Kiểm tra kịch bản KT-17 trên màn hình nhỏ (320x568) và khi tăng cỡ chữ (1.35x):
+      // lưu 70 kg & 175 cm (BMI 22.9), sau đó nhập cân nặng 0, chiều cao 175 -> thông báo lỗi hiển thị đầy đủ, không bị cắt (...)
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.platformDispatcher.clearTextScaleFactorTestValue();
+      });
+
+      await tester.enterText(find.byKey(const Key('weight_input_field')), '70');
+      await tester.enterText(
+        find.byKey(const Key('height_input_field')),
+        '175',
+      );
+      await tester.ensureVisible(find.byKey(const Key('update_bmi_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('update_bmi_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('22.9'), findsOneWidget);
+
+// Chờ thông báo lưu thành công đóng trước khi thử nhập sai.
+await tester.pump(const Duration(seconds: 5));
+await tester.pumpAndSettle();
+
+tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1.0;
+      tester.platformDispatcher.textScaleFactorTestValue = 1.35;
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(const Key('weight_input_field')), '0');
+      await tester.enterText(
+        find.byKey(const Key('height_input_field')),
+        '175',
+      );
+      await tester.ensureVisible(find.byKey(const Key('update_bmi_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('update_bmi_button')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('22.9'), findsOneWidget);
+      expect(provider.weight, closeTo(70.0, 1e-6));
+      expect(provider.height, closeTo(175.0, 1e-6));
+
+      // Hai ô nhập xếp dọc trên màn hình hẹp để thông báo lỗi có đủ chiều ngang
+      final weightBottom = tester
+          .getBottomLeft(find.byKey(const Key('weight_input_field')))
+          .dy;
+      final heightTop = tester
+          .getTopLeft(find.byKey(const Key('height_input_field')))
+          .dy;
+      expect(heightTop, greaterThanOrEqualTo(weightBottom));
+
+      const fullWeightError =
+          'Cân nặng phải là số hợp lệ > 0 (dùng dấu chấm hoặc phẩy cho phần thập phân)';
+      final weightErrorFinder = find.text(fullWeightError);
+      expect(weightErrorFinder, findsOneWidget);
+      final weightErrorParagraph = tester.renderObject<RenderParagraph>(
+        weightErrorFinder,
+      );
+      expect(weightErrorParagraph.didExceedMaxLines, isFalse);
     },
   );
 
